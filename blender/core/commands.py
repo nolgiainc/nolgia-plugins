@@ -21,8 +21,13 @@ PREVIEW_ENGINES = ("current", "eevee", "workbench", "cycles")
 IMPORT_AS = ("plane", "texture", "clip")
 
 DEFAULT_TIMEOUT = 120.0
-MAX_RESULT_BYTES = 1000 * 1000  # the API takes at most 1 MB of result JSON
+# The API takes at most 1 MB (2**20 bytes) of result JSON, measured after it
+# re-encodes the result. Stay a little under so a result never lands at 413.
+MAX_RESULT_BYTES = 1000 * 1000
 MAX_ERROR_CHARS = 64 * 1024
+# The API refuses a result that arrives at or after expires_at, so the plugin
+# stops waiting (for approval, or for code to finish) a little before that.
+RESULT_MARGIN = 3.0
 
 
 class CommandError(Exception):
@@ -62,8 +67,14 @@ class Command:
         return DEFAULT_TIMEOUT
 
     @property
-    def deadline(self):
+    def expires(self):
+        """When the API stops accepting a result, on our monotonic clock."""
         return self.received_at + self.timeout
+
+    @property
+    def deadline(self):
+        """When to give up so the failure still reaches the API in time."""
+        return self.expires - min(RESULT_MARGIN, self.timeout * 0.25)
 
     def remaining(self, now=None):
         return self.deadline - (time.monotonic() if now is None else now)
@@ -220,7 +231,10 @@ def result_body(ok, result=None, error=None):
 
 
 def _size(body):
-    return len(json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+    """Bytes of the body as the API measures it. Go's encoder writes <, > and &
+    as \\u003c and friends, five bytes more each."""
+    text = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+    return len(text.encode("utf-8")) + 5 * (text.count("<") + text.count(">") + text.count("&"))
 
 
 class ActivityLog:

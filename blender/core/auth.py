@@ -114,4 +114,6 @@ class DeviceLogin:
                 raise LoginError("NOLGIA answered without a token. Try signing in again.")
             expires_in = (data or {}).get("expires_in")
             expires_at = self.clock() + int(expires_in) if expires_in else None
+            # The documented token response has no email; the plugin reads it
+            # from GET /me afterwards. Use it if a server sends it anyway.
             return Token(token, expires_at, data.get("email"), data.get("user_id"))

@@ -66,6 +66,7 @@ class Controller:
         self.login = None
         self.snapshot = {}
         self.env_token = os.environ.get("NOLGIA_TOKEN") or None
+        self.env_email = ""
         self.message = ""
         self.version = 0
         self._drawn = (-1, -1)
@@ -199,9 +200,43 @@ class Controller:
         self.worker.start()
         self.set_pref("connected", True)
         self.clean_exit = True
+        if not self.account_email():
+            self._fetch_email(api)
         log("Connecting to %s as instance %s." % (api.base_url, self.lease.instance_id))
         self.bump()
         return True
+
+    def account_email(self):
+        if self.env_token:
+            return self.env_email
+        prefs = self.prefs()
+        return prefs.account_email if prefs is not None else ""
+
+    def _fetch_email(self, api):
+        """GET /me off the main thread, for "Signed in as". Failures are
+        ignored: a refused token shows up through the worker anyway."""
+        token = api.token
+
+        def fetch():
+            try:
+                email = (api.get_me() or {}).get("email") or ""
+            except Exception:
+                return
+            if email:
+                self.events.put(lambda: self._set_email(token, email))
+
+        threading.Thread(target=fetch, name="nolgia-me", daemon=True).start()
+
+    def _set_email(self, token, email):
+        if token != self.token():
+            return  # signed out or in again meanwhile
+        if self.env_token:
+            self.env_email = email
+        else:
+            self.set_pref("account_email", email)
+            _mark_prefs_dirty()
+        log("Signed in as %s." % email)
+        self.bump()
 
     def disconnect(self, reason="NOLGIA was switched off in Blender before this ran."):
         self._want_connect = False
@@ -254,6 +289,12 @@ class Controller:
                 except Exception:
                     pass
                 token = login.wait_for_token(prompt)
+                if not token.email:  # the token response has no email: ask GET /me
+                    try:
+                        me = ApiClient(base_url_from_env(), token.access_token).get_me()
+                        token.email = me.get("email") or None
+                    except Exception:
+                        pass
                 self.events.put(lambda: self._signed_in(state, token))
             except LoginCancelled:
                 self.events.put(lambda: self._login_over(state, ""))
@@ -284,6 +325,7 @@ class Controller:
             return  # cancelled meanwhile
         self.login = None
         self.env_token = None
+        self.env_email = ""
         self.set_pref("token", token.access_token)
         self.set_pref("account_email", token.email or "")
         self.set_pref("token_expires_at", float(token.expires_at or 0))

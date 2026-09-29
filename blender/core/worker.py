@@ -25,6 +25,23 @@ from .commands import CAPABILITIES, Command, CommandError, result_body, validate
 from .util import Backoff
 
 
+# The API's limits on POST /bridge/sessions fields (characters).
+MAX_VERSION = 64
+MAX_MACHINE_NAME = 128
+MAX_DOCUMENT_NAME = 512
+MAX_DOCUMENT_PATH = 4096
+
+
+def _one_line(value, limit):
+    text = "".join(ch for ch in str(value or "") if ch.isprintable())
+    return text.strip()[:limit]
+
+
+def _session_gone(err):
+    """404 (unknown session) or 409 session_disconnected: register again."""
+    return err.status == 404 or (err.status == 409 and err.code in ("session_disconnected", ""))
+
+
 class Status:
     OFF = "off"
     CONNECTING = "connecting"
@@ -123,14 +140,19 @@ class BridgeWorker:
         return self._stop.wait(seconds)
 
     def payload(self):
+        """The full state, every time: the API resets fields left out."""
         snap = self.snapshot() or {}
-        document = snap.get("document") or {"name": "untitled"}
+        doc = snap.get("document") or {}
+        document = {"name": str(doc.get("name") or "")[:MAX_DOCUMENT_NAME]}
+        path = doc.get("path")
+        if path and len(path) <= MAX_DOCUMENT_PATH:
+            document["path"] = path
         return {
             "instance_id": self.instance_id,
             "app": APP,
-            "app_version": str(snap.get("app_version") or ""),
+            "app_version": _one_line(snap.get("app_version"), MAX_VERSION),
             "plugin_version": PLUGIN_VERSION,
-            "machine_name": self.machine_name,
+            "machine_name": _one_line(self.machine_name, MAX_MACHINE_NAME),
             "document": document,
             "capabilities": list(CAPABILITIES),
             "allow_agent": bool(snap.get("allow_agent", True)),
@@ -174,7 +196,8 @@ class BridgeWorker:
                     self.log(self.status_text)
                     self._wait(delay)
                     continue
-                session = data.get("session") if isinstance(data.get("session"), dict) else data
+                # The API answers the session itself; accept {"session": {...}} too.
+                session = data if data.get("id") else data.get("session")
                 session_id = session.get("id") if isinstance(session, dict) else None
                 if not session_id:
                     delay = backoff.next()
@@ -224,8 +247,8 @@ class BridgeWorker:
                     self._auth_failed(err)
                     break
                 except ApiError as err:
-                    if err.status == 404:
-                        self.log("NOLGIA forgot this session; registering again.")
+                    if _session_gone(err):
+                        self.log("NOLGIA closed this session; registering again.")
                         self._session_lost(session_id)
                         continue
                     delay = err.retry_after or backoff.next()
@@ -288,8 +311,9 @@ class BridgeWorker:
     def _post(self, command, ok, result, error):
         body = result_body(ok, result, error)
         backoff = Backoff(1.0, 30.0)
-        give_up_at = time.monotonic() + max(60.0, command.remaining() + 30.0)
-        shrunk = False
+        # The API refuses a result at or after expires_at, so retrying past
+        # that is pointless (a few seconds of slack for the clocks).
+        give_up_at = command.expires + 5.0
         while True:
             try:
                 self.api.post_result(command.id, body)
@@ -301,17 +325,18 @@ class BridgeWorker:
                 self._auth_failed(err)
                 return
             except ApiError as err:
-                if err.status == 409:
-                    self.activity.update(command.id, "cancelled", "Cancelled or timed out on NOLGIA")
-                    self.log("Command %s was cancelled or timed out on NOLGIA." % command.kind)
+                if err.status == 409:  # command_not_running: drop the outcome
+                    status = "expired" if "expired" in (err.detail or "") else "cancelled"
+                    self.activity.update(command.id, status, err.detail or "Stopped on NOLGIA")
+                    self.log("NOLGIA no longer wanted the result of %s (%s)." % (command.kind, err.detail or err.code))
+                    return
+                if err.status == 413:  # the API already marked it failed
+                    self.activity.update(command.id, "failed", "Result over 1 MB")
+                    self.log("The result of %s was over 1 MB; NOLGIA marked it failed." % command.kind)
                     return
                 if err.status == 404:
                     self.activity.update(command.id, "expired", "NOLGIA no longer has this command")
                     return
-                if err.status == 413 and not shrunk:
-                    shrunk = True
-                    body = result_body(False, None, "The result was too large for NOLGIA to accept.")
-                    continue
                 if err.status != 429 and err.status < 500:
                     self.activity.update(command.id, "failed", err.message())
                     self.log("NOLGIA refused the result of %s: %s" % (command.kind, err.message()))

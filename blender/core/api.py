@@ -143,6 +143,10 @@ class ApiClient:
             auth=False,
         ).json()
 
+    def get_me(self):
+        """GET /me: the signed-in user ({id, email, name?, ...})."""
+        return self.request("GET", "/me").json() or {}
+
     # --------------------------------------------------------------- bridge
 
     def register_session(self, payload):
@@ -154,7 +158,9 @@ class ApiClient:
         )
 
     def next_command(self, session_id, wait=25):
-        """Long poll. Returns the command dict, or None on 204."""
+        """Long poll. Returns the command (the API answers it bare), or None
+        on 204. 404 (unknown session) and 409 session_disconnected raise
+        ApiError: both mean register again."""
         wait = max(0, min(25, int(wait)))
         resp = self.request(
             "GET",

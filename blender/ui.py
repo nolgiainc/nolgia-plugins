@@ -100,8 +100,9 @@ def draw_nolgia(layout, context, in_prefs=False):
         row.scale_y = 1.4
         row.operator("nolgia.sign_in", icon="USER")
     else:
-        if prefs.account_email:
-            layout.label(text="Signed in as %s" % prefs.account_email)
+        email = ctl.account_email()
+        if email:
+            layout.label(text="Signed in as %s" % email)
         elif ctl.env_token:
             layout.label(text="Signed in with NOLGIA_TOKEN")
         col = layout.column()

@@ -55,9 +55,9 @@ want to see it first.
 |---|---|---|
 | `info` | none | open file (name, path, unsaved changes), scene, frame range, fps, render engine and size, collections with object counts, selected and active object, cameras |
 | `run` | `language: "python"`, `code`, `timeout_seconds?` | `{value, stdout, stderr}`; `value` is whatever the code puts in `result` (the code sees `bpy`, `mathutils`, `C`, `D`). A failure returns the traceback. |
-| `preview` | `camera?`, `frame?`, `width?` (16 to 1920), `engine?` (`current`, `eevee`, `workbench`, `cycles`) | renders a PNG still and uploads it: `{asset_id, width, height, camera, frame, engine}` |
-| `import_asset` | `asset_id`, `as?` (`plane`, `texture`, `clip`) | brings a NOLGIA asset into the scene: GLB, glTF, FBX and OBJ as objects, images as a plane (or a texture with `as: "texture"`), video as a movie clip (or a plane), audio as a sound: `{imported: [names], kind}` |
-| `export` | `format` (`blend`, `png`, `mp4`, `glb`), `frames?`, `filename?`, `selected_only?` (glb) | saves a copy, renders a still or an H.264 video at the scene's settings, or exports glTF, then uploads it: `{asset_id, format, filename}` |
+| `preview` | `camera?`, `frame?`, `width?` (16 to 1920), `engine?` (`current`, `eevee`, `workbench`, `cycles`) | renders a still and uploads it: `{asset_id, width, height, mime_type, camera, frame, engine}`. A PNG, or a JPEG when the PNG would be too big for your agent to see inline (about 3.6 MB). |
+| `import_asset` | `asset_id`, `as?` (`plane`, `texture`, `clip`) | brings a NOLGIA asset into the scene: GLB models as objects, images as a plane (or a texture with `as: "texture"`), video as a movie clip (or a plane), audio as a sound: `{imported: [names], kind}` |
+| `export` | `format` (`png`, `mp4`, `glb`, `blend`), `frames?` (`"24"` or `"1-120"`), `filename?`, `selected_only?` (glb) | renders a still or an H.264 video at the scene's settings, or exports a GLB, and uploads it: `{asset_id, format, filename}`. `blend` saves a copy on this computer instead (next to the open file, or in Documents/NOLGIA exports while it is unsaved) and never overwrites a file: `{asset_id: null, path, note}`. Blender files are not uploaded to NOLGIA. |
 | `save` | `path?` | saves the file; without `path` only to the file that is already open: `{path}` |
 | `open` | `path` | opens a .blend file; asks you first when the open file has unsaved changes: `{path}` |
 
@@ -81,6 +81,7 @@ code, so the plugin refuses to connect while Ask before running code is on.
 | `NOLGIA_ASK_BEFORE_RUN=0/1` | set Ask before running code |
 | `NOLGIA_ALLOW_AGENT=0/1` | set Allow NOLGIA Agent |
 | `NOLGIA_INSTANCE_ID` | fixed session id for this Blender (render farms running many Blenders) |
+| `NOLGIA_EXPORT_DIR` | where `export` `blend` puts copies of unsaved files |
 
 ### Development
 
@@ -117,4 +118,5 @@ Run the mock API on its own:
 python3 tools/mock_bridge_server.py --port 8765 --token test-token --auto-approve-after 1
 ```
 
-The wire format is in `docs/design/bridge.md` of the NOLGIA API.
+The wire format is the NOLGIA API's `/bridge/*` endpoints (`api/openapi.yaml`,
+`internal/handlers/bridge.go`); the mock follows the same rules.

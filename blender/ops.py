@@ -13,6 +13,7 @@ import glob
 import os
 import shutil
 import tempfile
+import time
 
 import bpy
 import mathutils
@@ -30,7 +31,11 @@ ENGINE_CHOICES = {
     "cycles": ("CYCLES",),
 }
 PREVIEW_MAX_CYCLES_SAMPLES = 32
+# The MCP preview tool shows the still inline only up to 3,750,000 bytes.
+PREVIEW_MAX_BYTES = 3_600_000
+PREVIEW_JPEG_QUALITIES = (90, 80, 65, 50)
 UPLOAD_TAGS = ["blender"]
+BLEND_NOTE = "Blender files stay on this computer; NOLGIA stores previews, renders and GLB models."
 
 
 # ---------------------------------------------------------------- context
@@ -124,9 +129,10 @@ def is_dirty():
 
 
 def document():
-    """{name, path?} for the session's `document`."""
+    """{name, path?} for the session's `document`: name is empty while the
+    file has never been saved, as the API documents it."""
     path = bpy.data.filepath
-    doc = {"name": os.path.basename(path) if path else "untitled"}
+    doc = {"name": os.path.basename(path) if path else ""}
     if path:
         doc["path"] = path
     return doc
@@ -284,7 +290,10 @@ def do_run(args, prepared, command):
         "D": bpy.data,
         "result": None,
     }
-    timeout = args.get("timeout_seconds") or max(1.0, command.remaining())
+    # Stop in time for the failure to reach NOLGIA before the command expires.
+    timeout = max(1.0, command.remaining())
+    if args.get("timeout_seconds"):
+        timeout = min(timeout, args["timeout_seconds"])
     mark_changed()
     with ui_context():
         outcome = run_python(args["code"], namespace, timeout=timeout)
@@ -327,8 +336,26 @@ def _set_engine(render, choice):
     raise CommandError("This Blender does not have the %s render engine." % choice)
 
 
-def render_still(scene, camera, frame, width, height, path, engine="current", fast=False):
-    """Render one frame to a PNG. Returns the engine used.
+def _save_small(result, scene, settings, path, max_bytes):
+    """The render is saved as PNG; when that is over max_bytes, save a JPEG
+    instead, lowering the quality until it fits. Returns the path used."""
+    if not max_bytes or os.path.getsize(path) <= max_bytes:
+        return path
+    jpeg = os.path.splitext(path)[0] + ".jpg"
+    settings.file_format = "JPEG"
+    settings.color_mode = "RGB"
+    for quality in PREVIEW_JPEG_QUALITIES:
+        settings.quality = quality
+        result.save_render(filepath=jpeg, scene=scene)
+        if os.path.getsize(jpeg) <= max_bytes:
+            os.remove(path)
+            return jpeg
+    raise CommandError("The preview image is too large even as a JPEG. Ask for a smaller width.")
+
+
+def render_still(scene, camera, frame, width, height, path, engine="current", fast=False, max_bytes=None):
+    """Render one frame to a PNG (a JPEG when the PNG is over max_bytes).
+    Returns (engine used, path written).
 
     Settings are put back afterwards. If the engine fails (EEVEE on a render
     node without a GPU, say), try again with Workbench.
@@ -338,7 +365,7 @@ def render_still(scene, camera, frame, width, height, path, engine="current", fa
     saved.keep(scene, "camera")
     saved.keep(render, "resolution_x", "resolution_y", "resolution_percentage", "filepath",
                "use_file_extension", "engine")
-    saved.keep(render.image_settings, "file_format", "color_mode", "color_depth", "compression")
+    saved.keep(render.image_settings, "file_format", "color_mode", "color_depth", "compression", "quality")
     cycles = getattr(scene, "cycles", None)
     saved.keep(cycles, "samples")
     frame_before = scene.frame_current
@@ -368,11 +395,12 @@ def render_still(scene, camera, frame, width, height, path, engine="current", fa
                 if result is None:
                     raise RuntimeError("Blender made no image")
                 result.save_render(filepath=path, scene=scene)
-                if os.path.isfile(path):
-                    return engine_id
-                raise RuntimeError("the image was not written")
+                if not os.path.isfile(path):
+                    raise RuntimeError("the image was not written")
             except Exception as err:
                 last_error = err
+                continue
+            return engine_id, _save_small(result, scene, settings, path, max_bytes)
         raise CommandError("Blender could not render the image: %s" % last_error)
     finally:
         saved.restore()
@@ -396,21 +424,26 @@ def do_preview(args, prepared, command):
         frame = scene.frame_current
     folder = tempfile.mkdtemp(prefix="nolgia-preview-")
     path = os.path.join(folder, "preview.png")
+    max_bytes = int(os.environ.get("NOLGIA_PREVIEW_MAX_BYTES") or PREVIEW_MAX_BYTES)
     try:
-        engine = render_still(scene, camera, frame, width, height, path, args.get("engine"), fast=True)
+        engine, path = render_still(scene, camera, frame, width, height, path, args.get("engine"),
+                                    fast=True, max_bytes=max_bytes)
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True)
         raise
+    ext = os.path.splitext(path)[1]
+    mime = "image/jpeg" if ext == ".jpg" else "image/png"
     return {
         "_upload": {
             "path": path,
-            "content_type": "image/png",
-            "filename": "%s-preview-%04d.png" % (_stem(), frame),
+            "content_type": mime,
+            "filename": "%s-preview-%04d%s" % (_stem(), frame, ext),
             "display_name": "Blender preview, %s frame %d" % (scene.name, frame),
             "cleanup": folder,
         },
         "width": width,
         "height": height,
+        "mime_type": mime,
         "camera": camera.name,
         "frame": frame,
         "engine": engine,
@@ -476,17 +509,54 @@ def _stem(filename=None):
     return util.safe_filename(os.path.splitext(os.path.basename(path))[0] if path else "untitled", "untitled")
 
 
+def export_dir():
+    """Where a copy of an unsaved file goes: NOLGIA_EXPORT_DIR, else
+    Documents/NOLGIA exports (the home folder when there is no Documents)."""
+    folder = os.environ.get("NOLGIA_EXPORT_DIR")
+    if not folder:
+        home = os.path.expanduser("~")
+        docs = os.path.join(home, "Documents")
+        folder = os.path.join(docs if os.path.isdir(docs) else home, "NOLGIA exports")
+    return folder
+
+
+def export_blend_copy(filename):
+    """Save a copy of the open file on this computer, never over an existing
+    file. The .blend is not uploaded: NOLGIA does not store Blender files."""
+    current = bpy.data.filepath
+    folder = os.path.dirname(current) if current else export_dir()
+    base = _stem(filename) if filename else _stem() + "-copy"
+    target = os.path.join(folder, base + ".blend")
+    if os.path.exists(target):
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = os.path.join(folder, "%s-%s.blend" % (base, stamp))
+        n = 2
+        while os.path.exists(target):
+            target = os.path.join(folder, "%s-%s-%d.blend" % (base, stamp, n))
+            n += 1
+    os.makedirs(folder, exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=target, copy=True, check_existing=False)
+    if not os.path.isfile(target):
+        raise CommandError("Blender did not write the copy to %s." % target)
+    return {
+        "asset_id": None,
+        "path": target,
+        "note": BLEND_NOTE,
+        "format": "blend",
+        "filename": os.path.basename(target),
+    }
+
+
 def do_export(args, prepared, command):
     fmt = args["format"]
     scene = active_scene()
     stem = _stem(args.get("filename"))
     folder = tempfile.mkdtemp(prefix="nolgia-export-")
+    if fmt == "blend":
+        shutil.rmtree(folder, ignore_errors=True)
+        return export_blend_copy(args.get("filename"))
     try:
-        if fmt == "blend":
-            path = os.path.join(folder, stem + ".blend")
-            bpy.ops.wm.save_as_mainfile(filepath=path, copy=True, check_existing=False)
-            content_type = util.UPLOAD_TYPES[".blend"]
-        elif fmt == "png":
+        if fmt == "png":
             frames = args.get("frames")
             frame = frames[0] if frames else scene.frame_current
             camera = _find_camera(scene, None)
@@ -606,8 +676,8 @@ def prepare_import(command, api, fallback_dir, snapshot):
         ext = util.import_extension(name, asset.get("mime_type"), head)
         if not ext:
             raise CommandError(
-                "Blender cannot import this file type (%s). It imports GLB, glTF, FBX, OBJ, images, "
-                "video and audio." % (asset.get("mime_type") or "unknown")
+                "Blender cannot import this file type (%s). It imports GLB models, images, video "
+                "and audio from NOLGIA." % (asset.get("mime_type") or "unknown")
             )
         kind = util.IMPORT_KINDS[ext]
         filename = util.safe_filename(os.path.splitext(name)[0], asset_id) + ext

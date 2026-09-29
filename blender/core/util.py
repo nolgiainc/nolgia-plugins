@@ -89,8 +89,6 @@ UPLOAD_TYPES = {
     ".ogg": "audio/ogg",
     ".m4a": "audio/mp4",
     ".glb": "model/gltf-binary",
-    # Not in the API's upload enum yet: the bridge needs it for export blend.
-    ".blend": "application/x-blender",
 }
 
 # What an asset's MIME type means as a file on disk, for import.
