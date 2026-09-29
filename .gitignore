@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 blender/dist/
+adobe/dist/
+node_modules/
+.rnd
