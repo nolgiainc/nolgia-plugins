@@ -9,8 +9,8 @@ Film assistant category. The agent works through the NOLGIA Bridge tools
 
 1. Call `nolgia_app_status`. If Photoshop is not listed, stop and tell the
    person in two lines: install NOLGIA for Photoshop from
-   nolgia.ai/plugins/photoshop, then open Plugins > NOLGIA for Photoshop >
-   NOLGIA and sign in. Do not guess or continue without it.
+   nolgia.ai/plugins/photoshop, then open the NOLGIA panel from Photoshop's
+   Plugins menu and sign in. Do not guess or continue without it.
 2. Call `nolgia_app_info`. Read what is really open: the documents, the active
    one's size, resolution, colour mode and bit depth, its layers (groups,
    masks, what is hidden or locked), the selected layer and any selection.
@@ -69,9 +69,14 @@ Film assistant category. The agent works through the NOLGIA Bridge tools
   or move it afterwards with
   `layer.move(target, constants.ElementPlacement.PLACEBEFORE)` (above) or
   `PLACEAFTER` (below); `PLACEINSIDE` puts it in a group.
+- `doc.createLayerGroup({ name })` always makes the group at the top of the
+  stack. To nest groups, move them in with
+  `group.move(parent, constants.ElementPlacement.PLACEINSIDE)`, which puts
+  the moved layer at the top of the parent: move them bottom one first.
 - Deleting a layer leaves no layer selected; select one before the next step.
   `nolgia_app_import` places the image right above the selected layer (inside
-  its group), or at the top of the stack when none is selected.
+  its group), or at the top of the stack when none is selected. With a group
+  itself selected it lands above the group, not in it: move it in afterwards.
 - Photoshop hands out a new object each time you read a layer, so compare
   layers by `id`, never with `===`, and keep ids (not objects) between runs.
   The same goes for documents: keep the document's `id` and find it with
@@ -94,15 +99,46 @@ Film assistant category. The agent works through the NOLGIA Bridge tools
   the Graphics Processor notice at startup) Photoshop is busy: changes fail,
   and `run` says so and runs your code outside the modal scope, where it can
   only read. Ask the person to close the dialog, then run the step again.
-- `await app.documents.add(...)` now and then resolves to `null` (seen just
-  after Photoshop started) although the document was made: fall back to
-  `app.activeDocument`.
+- `await app.documents.add(...)` makes the document and makes it active, but
+  what it returns is not reliable: `null`, or even the document that was
+  active before. Use `app.activeDocument` right after it (check its name).
 - `doc.path` is empty until the document is saved. Save with `doc.save()` or
   `doc.saveAs.psd(entry, options, asCopy)`; `nolgia_app_run` has `fs` (the
   UXP local file system, full access) to get entries:
   `await fs.getEntryWithUrl("file:/C:/Projects/shot.psd")` for an existing
   file, `await (await fs.getEntryWithUrl("file:/C:/Projects")).createFile("shot.psd", { overwrite: true })`
   for a new one.
+
+## Recipes that work (Photoshop 2026)
+
+- Select a layer: `play([{ _obj: "select", _target: [{ _ref: "layer", _id: id }], makeVisible: false }])`.
+- Copy the original into a group:
+  `await original.duplicate(group, constants.ElementPlacement.PLACEINSIDE, "Remove: cone")`.
+- Selections: `doc.selection.selectRectangle({ left, top, right, bottom })`,
+  `selectEllipse(...)`, `selectPolygon([{ x, y }, ...])`; pass
+  `constants.SelectionType.EXTEND` as the second argument to add to it. Grow
+  it with `play([{ _obj: "expand", by: { _unit: "pixelsUnit", _value: 5 }, selectionModifyEffectAtCanvasBounds: false }])`
+  and soften it with the same step as `{ _obj: "feather", radius: { _unit: "pixelsUnit", _value: 2 }, ... }`.
+- Content-Aware Fill inside the selection, on the selected layer:
+  `play([{ _obj: "fill", using: { _enum: "fillContents", _value: "contentAware" }, contentAwareColorAdaptationFill: true, opacity: { _unit: "percentUnit", _value: 100 }, mode: { _enum: "blendMode", _value: "normal" } }])`.
+  The same `fill` with `_value: "black"`, `"gray"` (50% gray) or `"color"`
+  plus `color: { _obj: "RGBColor", red, grain, blue }` fills plainly;
+  `play([{ _obj: "delete" }])` clears the selection on a normal layer.
+- Mask the selected layer to the selection:
+  `play([{ _obj: "make", new: { _class: "channel" }, at: { _ref: "channel", _enum: "channel", _value: "mask" }, using: { _enum: "userMaskEnabled", _value: "revealSelection" } }])`;
+  remove a mask with `play([{ _obj: "delete", _target: [{ _ref: "channel", _enum: "channel", _value: "mask" }] }])`.
+- An adjustment layer, right above the selected layer:
+  `play([{ _obj: "make", _target: [{ _ref: "adjustmentLayer" }], using: { _obj: "adjustmentLayer", name, type } }])`
+  with `type` such as
+  `{ _obj: "curves", presetKind: { _enum: "presetKindType", _value: "presetKindCustom" }, adjustment: [{ _obj: "curvesAdjustment", channel: { _ref: "channel", _enum: "channel", _value: "composite" }, curve: [{ _obj: "paint", horizontal: 0, vertical: 0 }, { _obj: "paint", horizontal: 128, vertical: 121 }, { _obj: "paint", horizontal: 255, vertical: 255 }] }] }`
+  or `{ _obj: "photoFilter", color: { _obj: "RGBColor", red: 236, grain: 138, blue: 0 }, density: 18, preserveLuminosity: true }`
+  (warming). Made while a selection is active, it takes the selection as its
+  mask. Clip it to the layer below with
+  `play([{ _obj: "groupEvent", _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }] }])`.
+- Noise on the selected layer:
+  `play([{ _obj: "addNoise", distort: { _enum: "distort", _value: "gaussianDistribution" }, noise: { _unit: "percentUnit", _value: 4 }, monochromatic: true }])`.
+- Blend mode and opacity: `layer.blendMode = constants.BlendMode.OVERLAY`,
+  `layer.opacity = 55`.
 
 ## Using NOLGIA where it helps
 
@@ -118,9 +154,11 @@ Film assistant category. The agent works through the NOLGIA Bridge tools
   first as `image_url` (its signed URL from `nolgia_get_asset`) and the mask as
   `mask_asset_id` on a model that publishes `image.inpaint_mask`
   (`gpt-image-2.5-flare` or `gpt-image-2.5-sunburst`; check
-  `nolgia_list_models`). Bring the result in with `nolgia_app_import`: an image
-  with the document's shape lines up with the canvas exactly. Mask it to just
-  the repainted area so everything else stays the person's original pixels.
+  `nolgia_list_models`). The model redraws the whole picture (sharper and
+  often a little brighter, at a larger size) but keeps it aligned. Bring the
+  result in with `nolgia_app_import`: an image with the document's shape
+  lines up with the canvas exactly. Mask it to just the repaired things so
+  everything else stays the person's original pixels.
 - These generations cost credits: say what you are about to make and roughly
   what it costs (read it from `nolgia_list_models` or the tool's estimate)
   before you run it. Work in Photoshop itself is free.

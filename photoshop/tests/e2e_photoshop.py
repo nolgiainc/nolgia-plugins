@@ -32,7 +32,6 @@ Nothing it does costs credits.
 """
 
 import argparse
-import base64
 import json
 import os
 import random
@@ -41,7 +40,6 @@ import struct
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import urllib.error
 import urllib.parse

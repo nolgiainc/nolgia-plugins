@@ -290,12 +290,13 @@ been tried there yet.
 
 1. Get `nolgia-photoshop-<version>.ccx` from [nolgia.ai/plugins/photoshop](https://nolgia.ai/plugins/photoshop)
    (or the [releases](https://github.com/nolgiainc/nolgia-plugins/releases) here).
-2. Double-click the file. Creative Cloud installs it into Photoshop (it asks
-   you to confirm a plugin from outside the Adobe Marketplace). On Windows the
+2. Double-click the file. Creative Cloud installs it into Photoshop after you
+   confirm a plugin from outside the Adobe Marketplace. On Windows the
    installer also runs from a command prompt:
    `"C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install nolgia-photoshop-<version>.ccx`
    (and `/remove "NOLGIA for Photoshop"` takes it out again).
-3. In Photoshop, open Plugins > NOLGIA for Photoshop > NOLGIA.
+3. In Photoshop, open the NOLGIA panel from the Plugins menu (under NOLGIA
+   for Photoshop).
 4. Click Sign in. Your browser opens a NOLGIA page; check that the code
    matches the one in the panel and approve it.
 5. Keep Connected on and ask your agent to work in Photoshop. Each command
@@ -346,7 +347,9 @@ So agent code edits the document directly:
 
 ```js
 const layer = await doc.layers.add({ name: "Grain" });
-await play([{ _obj: "fill", using: { _enum: "fillContents", _value: "gray" } }]);
+await play([{ _obj: "fill", using: { _enum: "fillContents", _value: "gray" },
+              opacity: { _unit: "percentUnit", _value: 100 }, mode: { _enum: "blendMode", _value: "normal" } }]);
+layer.blendMode = constants.BlendMode.OVERLAY;
 result = { id: layer.id };
 ```
 
@@ -355,6 +358,17 @@ code needs a scope of its own: an error thrown inside `executeAsModal` comes
 back as bare text without a line number. The pitfalls Photoshop scripting has
 (where new layers land, batchPlay not throwing, and more) are in
 [`presets/photoshop/_common.md`](presets/photoshop/_common.md).
+
+### Known limits
+
+- Photoshop gives a plugin no time to reach the network when it quits, so
+  NOLGIA only notices a closed Photoshop when it stops checking in (about a
+  minute). A command sent in that minute waits until it expires.
+- A long poll the plugin gave up on can stay open on NOLGIA's side for up to
+  25 seconds (Google's front end keeps it), and would take the next command.
+  So after Pause and Resume, or a quick restart, the plugin waits for that
+  poll to run out before it connects again ("Reconnecting to NOLGIA...").
+- Photoshop's Generative Fill has no scripting interface the plugin supports.
 
 ### Development
 

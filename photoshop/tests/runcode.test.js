@@ -86,6 +86,30 @@ test("toJsonable makes Photoshop objects and odd values plain data", () => {
     m: { k: 2 },
   });
   assert.deepEqual(toJsonable(cyclic), { a: 1, self: "[circular]" });
+  class Bounds {
+    get typename() {
+      return "Bounds";
+    }
+    get left() {
+      return 1;
+    }
+    get top() {
+      return 2;
+    }
+    get right() {
+      return 11;
+    }
+    get bottom() {
+      return 22;
+    }
+    get width() {
+      return 10;
+    }
+    get height() {
+      return 20;
+    }
+  }
+  assert.deepEqual(toJsonable(new Bounds()), { typename: "Bounds", left: 1, top: 2, right: 11, bottom: 22, width: 10, height: 20 });
   assert.deepEqual(toJsonable(new Uint8Array([1, 2])), [1, 2]);
   assert.deepEqual(toJsonable(new Error("x")), { name: "Error", message: "x" });
 });

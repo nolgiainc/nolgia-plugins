@@ -122,7 +122,8 @@ function captureConsole(real, out, err) {
 }
 
 /** Turn what the code left in `result` into plain JSON data. Photoshop
- *  objects (documents, layers, ...) become {typename, id, name}. */
+ *  objects (documents, layers, ...) become {typename, id, name}; Bounds
+ *  become {typename, left, top, right, bottom, width, height}. */
 function toJsonable(value, depth = 0, seen = null) {
   if (depth > MAX_DEPTH) return "[nested too deep]";
   if (value === null || value === undefined) return null;
@@ -140,7 +141,8 @@ function toJsonable(value, depth = 0, seen = null) {
     if (value instanceof Error) return { name: value.name, message: value.message };
     if (typeof value.typename === "string" && !Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype) {
       const out = { typename: value.typename };
-      for (const key of ["id", "name"]) {
+      // Enough to act on: which object it is, and for Bounds the numbers.
+      for (const key of ["id", "name", "left", "top", "right", "bottom", "width", "height"]) {
         try {
           const v = value[key];
           if (typeof v === "number" || typeof v === "string") out[key] = v;
