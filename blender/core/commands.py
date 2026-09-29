@@ -81,7 +81,7 @@ class Command:
 
     @property
     def caller_label(self):
-        return {"agent": "NOLGIA Agent", "user": "you"}.get(self.caller, self.caller or "NOLGIA")
+        return {"agent": "Your NOLGIA Agent", "user": "Your agent"}.get(self.caller, self.caller or "NOLGIA")
 
 
 def _int(args, key, low=None, high=None, required=False):

@@ -35,7 +35,7 @@ class Harness:
 
     def needs_approval(self, ticket):
         if self.ask and ticket.command.kind == "run":
-            return ApprovalRequest("you wants to run Python in Blender", ["x = 1"], "nobody to ask")
+            return ApprovalRequest("Your agent wants to run Python in Blender", ["x = 1"], "nobody to ask")
         return None
 
 

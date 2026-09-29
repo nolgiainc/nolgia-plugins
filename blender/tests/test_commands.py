@@ -85,8 +85,8 @@ class CommandParsing(unittest.TestCase):
         self.assertEqual(Command({"id": "c", "kind": "info", "args": None}).args, {})
 
     def test_caller_label(self):
-        self.assertEqual(Command({"id": "c", "kind": "run", "caller": "agent"}).caller_label, "NOLGIA Agent")
-        self.assertEqual(Command({"id": "c", "kind": "run", "caller": "user"}).caller_label, "you")
+        self.assertEqual(Command({"id": "c", "kind": "run", "caller": "agent"}).caller_label, "Your NOLGIA Agent")
+        self.assertEqual(Command({"id": "c", "kind": "run", "caller": "user"}).caller_label, "Your agent")
 
 
 class ResultShaping(unittest.TestCase):
