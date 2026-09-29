@@ -25,7 +25,8 @@ One folder per app. Each folder has its own license.
 
 ### Install and use
 
-1. Get `nolgia-<version>.zip` from [nolgia.ai/plugins/blender](https://nolgia.ai/plugins/blender).
+1. Get `nolgia-blender-<version>.zip` from [nolgia.ai/plugins/blender](https://nolgia.ai/plugins/blender)
+   (or the [releases](https://github.com/nolgiainc/nolgia-plugins/releases) here).
 2. In Blender, open Edit > Preferences > Get Extensions, click the small arrow
    at the top right, choose Install from Disk and pick the zip. (Dragging the
    zip into Blender works too.)
@@ -105,11 +106,13 @@ python3 blender/tests/e2e_blender.py --blender /path/to/blender
 From WSL it works with a Windows `blender.exe` too (paths go through
 `wslpath`, variables through `WSLENV`).
 
-Build the installable zip and check it:
+Build the installable zip and check it. Releases are tagged `blender-v<version>`
+with the zip attached as `nolgia-blender-<version>.zip`; the website links to
+that exact name.
 
 ```sh
-blender --command extension build --source-dir blender --output-dir blender/dist
-blender --command extension validate blender/dist/nolgia-0.1.0.zip
+blender --command extension build --source-dir blender --output-filepath blender/dist/nolgia-blender-0.1.0.zip
+blender --command extension validate blender/dist/nolgia-blender-0.1.0.zip
 ```
 
 Run the mock API on its own:
