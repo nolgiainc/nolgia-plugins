@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Copyright (C) 2026 NOLGIA Inc -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div class="top">
+        <div class="brand">NOLGIA</div>
+        <div class="chip" id="chip"><div class="dot" id="chip-dot"></div><span id="chip-text">Off</span></div>
+      </div>
+      <div class="status" id="status">NOLGIA is loading...</div>
+
+      <div class="card attention" id="approval">
+        <div class="approval-title" id="approval-title"></div>
+        <div class="code-view" id="approval-code"></div>
+        <div class="hint">Code runs on this computer with your permissions.</div>
+        <div class="row">
+          <div class="btn primary" id="btn-approve">Run code</div>
+          <div class="btn" id="btn-deny">Deny</div>
+        </div>
+      </div>
+
+      <div class="card" id="signin">
+        <div class="lead">Connect this Photoshop to NOLGIA so your agent can look at your documents, edit them and move images to and from your NOLGIA library.</div>
+        <div class="btn primary" id="btn-sign-in">Sign in</div>
+      </div>
+
+      <div class="card" id="login">
+        <div class="label">Your code</div>
+        <div class="code" id="login-code">....-....</div>
+        <div class="hint">Check that the browser page shows the same code, then approve it there.</div>
+        <div class="row">
+          <div class="btn" id="btn-open-page">Open page again</div>
+          <div class="btn" id="btn-copy-code">Copy code</div>
+        </div>
+        <div class="btn ghost" id="btn-cancel-sign-in">Cancel</div>
+      </div>
+
+      <div class="card" id="account">
+        <div class="muted" id="account-line"></div>
+        <div class="toggle" id="tg-connected">
+          <div class="box"><div class="tick"></div></div>
+          <div class="toggle-text">
+            <div class="toggle-title">Connected</div>
+            <div class="toggle-help">NOLGIA can send commands to this Photoshop only while this is on.</div>
+          </div>
+        </div>
+        <div class="toggle" id="tg-allow-agent">
+          <div class="box"><div class="tick"></div></div>
+          <div class="toggle-text">
+            <div class="toggle-title">Allow NOLGIA Agent</div>
+            <div class="toggle-help">Also let your NOLGIA Agent in the cloud work here, not only the agent apps you run yourself.</div>
+          </div>
+        </div>
+        <div class="toggle" id="tg-ask">
+          <div class="box"><div class="tick"></div></div>
+          <div class="toggle-text">
+            <div class="toggle-title">Ask before running code</div>
+            <div class="toggle-help">Show each piece of code NOLGIA wants to run and wait for you to approve it.</div>
+          </div>
+        </div>
+        <div class="btn ghost" id="btn-sign-out">Sign out</div>
+      </div>
+
+      <div class="card" id="activity">
+        <div class="row between">
+          <div class="label">Activity</div>
+          <div class="btn small" id="btn-pause">Pause</div>
+        </div>
+        <div id="activity-list"></div>
+      </div>
+
+      <div class="foot" id="foot">NOLGIA works in this Photoshop only while Connected is on. Code NOLGIA runs here runs on your computer with your permissions.</div>
+      <div class="foot dev" id="dev-line"></div>
+    </div>
+    <script src="main.js"></script>
+  </body>
+</html>
