@@ -1,0 +1,367 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2026 NOLGIA Inc */
+/* NOLGIA look: navy canvas, white ink, one orange primary action,
+   rounded-square shapes (never pills). */
+
+html {
+  background-color: #0a0d14;
+  height: 100%;
+}
+
+body {
+  background-color: #0a0d14;
+  min-height: 100%;
+  color: #ffffff;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  margin: 0;
+  padding: 0;
+}
+
+#app {
+  padding: 12px 12px 16px 12px;
+}
+
+.top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #ffffff;
+}
+
+.chip {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background-color: #171b26;
+  border: 1px solid #262c3a;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  margin-right: 6px;
+  background-color: rgba(255, 255, 255, 0.35);
+}
+
+.dot.connected {
+  background-color: #35e68b;
+}
+
+.dot.connecting,
+.dot.retrying {
+  background-color: #f0a33c;
+}
+
+.dot.approval {
+  background-color: #ff6a1a;
+}
+
+.dot.signed_out {
+  background-color: #ff6b5e;
+}
+
+.status {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 17px;
+}
+
+.card {
+  background-color: #10131c;
+  border: 1px solid #1e2430;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.card.attention {
+  border-color: #ff6a1a;
+}
+
+.lead {
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 17px;
+  margin-bottom: 12px;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.44);
+}
+
+.muted {
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.hint {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 15px;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+.code {
+  font-family: Consolas, Menlo, monospace;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #ffffff;
+  background-color: #171b26;
+  border: 1px solid #262c3a;
+  border-radius: 6px;
+  padding: 10px;
+  margin-top: 6px;
+  text-align: center;
+}
+
+.row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+.row.between {
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.row .btn {
+  flex-grow: 1;
+  margin-right: 6px;
+}
+
+.row .btn:last-child {
+  margin-right: 0;
+}
+
+.row.between .btn {
+  flex-grow: 0;
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background-color: #171b26;
+  border: 1px solid #2a3142;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 6px;
+}
+
+.btn:hover {
+  background-color: #1e2430;
+  border-color: #3a4256;
+}
+
+.btn.primary {
+  background-color: #ff6a1a;
+  border-color: #ff6a1a;
+  color: #0a0d14;
+  height: 34px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.btn.primary:hover {
+  background-color: #ff8a3d;
+  border-color: #ff8a3d;
+}
+
+.btn.ghost {
+  background-color: transparent;
+  border-color: #262c3a;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.btn.small {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11px;
+  margin-top: 0;
+}
+
+.toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  padding: 8px 0;
+  cursor: pointer;
+  border-top: 1px solid #1a1f2b;
+}
+
+/* A rounded-square switch: dark with the knob left when off, white with a
+   navy knob right when on. */
+.toggle .box {
+  width: 28px;
+  height: 16px;
+  min-width: 28px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background-color: #171b26;
+  margin-right: 10px;
+  margin-top: 1px;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 2px;
+}
+
+.toggle.on .box {
+  background-color: #ffffff;
+  border-color: #ffffff;
+  justify-content: flex-end;
+}
+
+.toggle .tick {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.45);
+}
+
+.toggle.on .tick {
+  background-color: #0a0d14;
+}
+
+.toggle-title {
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.toggle-help {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.approval-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.code-view {
+  font-family: Consolas, Menlo, monospace;
+  font-size: 11px;
+  line-height: 15px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #e8ecf5;
+  background-color: #080b12;
+  border: 1px solid #1e2430;
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 5px 0;
+  border-top: 1px solid #1a1f2b;
+}
+
+.item .time {
+  width: 58px;
+  min-width: 58px;
+  color: rgba(255, 255, 255, 0.44);
+  font-family: Consolas, Menlo, monospace;
+  font-size: 11px;
+}
+
+.item .kind {
+  flex-grow: 1;
+  color: #ffffff;
+}
+
+.item .state {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.item .state.succeeded {
+  color: #35e68b;
+}
+
+.item .state.failed,
+.item .state.expired,
+.item .state.cancelled {
+  color: #ff6b5e;
+}
+
+.item .state.approval {
+  color: #ff6a1a;
+}
+
+.item .state.running,
+.item .state.received {
+  color: #f0a33c;
+}
+
+.empty {
+  color: rgba(255, 255, 255, 0.44);
+  padding-top: 4px;
+}
+
+.foot {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11px;
+  line-height: 15px;
+  margin-top: 4px;
+}
+
+.foot.dev {
+  color: #f0a33c;
+}
+
+.hidden {
+  display: none;
+}
+
+/* The approval window */
+.dialog-html {
+  background-color: #0a0d14;
+  height: 100%;
+}
+
+body {
+  background-color: #0a0d14;
+  min-height: 100%;
+  color: #ffffff;
+  padding: 16px;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  width: 560px;
+}
+
+.dialog-body .code-view {
+  max-height: 300px;
+}
