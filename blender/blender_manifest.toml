@@ -1,0 +1,28 @@
+schema_version = "1.0.0"
+
+id = "nolgia"
+version = "0.1.0"
+name = "NOLGIA"
+tagline = "Let your NOLGIA agent work in this Blender scene"
+maintainer = "NOLGIA Inc"
+type = "add-on"
+website = "https://nolgia.ai/plugins/blender"
+tags = ["Pipeline", "System"]
+
+blender_version_min = "4.2.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2026 NOLGIA Inc"]
+
+[permissions]
+network = "Connect to NOLGIA so your agent can work in this scene"
+files = "Save, open, import and export the files your agent asks for"
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  "/.*",
+  "/tests/",
+  "/dist/",
+  "*.pyc",
+]
