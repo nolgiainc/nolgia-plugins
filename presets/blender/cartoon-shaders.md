@@ -32,6 +32,9 @@ control sits in one place.
    Texture Amount. Inside: Diffuse BSDF, Shader to RGB, a Map Range or Color
    Ramp set to constant interpolation with stops built from Band Count, mixing
    Base Color toward Base Color times Shadow Tint, plus a Fresnel-driven rim.
+   Shader to RGB gives raw light levels, often well above 1, so divide by a
+   `Light Level` input before the ramp and set it from a preview; otherwise
+   everything lands in one band.
 2. **Keep the original colours.** For each targeted material, read its current
    base colour (the Principled BSDF Base Color, or the image texture feeding
    it) and wire it into `NOLGIA Toon` Base Color. Do not delete the old shader:
@@ -42,10 +45,12 @@ control sits in one place.
    warm scenes, warm for cool ones), and Band Softness from the reference.
    Offer one texture: a subtle paper grain or a halftone in the shadow band,
    driven by Texture Amount.
-4. **Outlines.** Add a Line Art modifier on a Grease Pencil object for the
-   whole scene or collection (Blender 4.3+ calls it Line Art on a Grease Pencil
-   object; earlier versions use a Grease Pencil Line Art object), with contour
-   and silhouette on, crease on only if asked, thickness from the choice above.
+4. **Outlines.** Add Line Art for the whole scene or collection: in Blender
+   4.3 and later, `bpy.ops.object.grease_pencil_add(type='LINEART_SCENE')` (or
+   `'LINEART_COLLECTION'`); earlier versions use a Grease Pencil Line Art
+   object. Contour on (it covers the silhouette), crease on only if asked.
+   Thickness is the modifier's `radius` in metres: about 0.01 reads well for a
+   scene seen from 10 m, and 0.0035 is a hairline.
    For a fast alternative, a Solidify modifier with flipped normals and a
    backface-culled black material on each object: ask which they prefer.
 5. **One control panel.** An empty `Toon Controls` with custom properties for

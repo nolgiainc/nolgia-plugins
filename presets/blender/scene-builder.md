@@ -21,9 +21,12 @@ separate and editable so the person can keep directing it.
 3. The look: realistic, stylised, or a reference image. If they give an image,
    ask whether it is for layout, for mood, or both.
 4. Which models do they already have? For anything missing, offer to make it
-   with NOLGIA: `nolgia_generate_3d` from a photo or from an image made with
-   `nolgia_text_to_image`. Say the rough credit cost before generating, and
-   generate only what they agree to.
+   with NOLGIA: `nolgia_generate_3d` from a photo of the object or from an
+   image made with `nolgia_text_to_image`. For a character, make a full-body
+   image of them as a figure (standing in an A pose on a plain background) and
+   turn that into the model; never work from a photo of a real person. If
+   `hunyuan3d-v3` times out, `trellis` is the fast, cheap fallback. Say the
+   rough credit cost before generating, and generate only what they agree to.
 
 ## Build
 
@@ -35,8 +38,9 @@ separate and editable so the person can keep directing it.
    floor, walls or terrain, the big shapes that define the silhouette. Put it in
    `NOLGIA Set`. Use the person's assets where they have them.
 3. **Bring in characters and props.** Import each with `nolgia_app_import`
-   (GLB), scale to real size (people 1.6 to 1.9 m), place on the floor (no
-   floating, no clipping), and put them in `NOLGIA Cast` and `NOLGIA Props`.
+   (GLB), shade smooth, scale to real size (people 1.6 to 1.9 m), place on the
+   floor (no floating, no clipping), and put them in `NOLGIA Cast` and
+   `NOLGIA Props`.
 4. **Pose.** Rigged characters: pose the armature bones for the action with the
    weight on the right foot, eyelines toward what they look at, hands touching
    what they hold. Unrigged generated characters: keep them as statues and say
@@ -55,7 +59,8 @@ separate and editable so the person can keep directing it.
 - Preview every camera. Each must read the action in one glance: subject
   sharp, eyeline clear, nothing important cut by the frame edge.
 - Scale check in code: every character between 1.5 and 2.0 m tall unless the
-  brief says otherwise; every object's lowest point on the floor within 1 cm.
+  brief says otherwise; every object's lowest point within 1 cm of the floor or
+  of the object it rests on (a lid on a bin, a crate on a crate).
 
 ## Deliver
 

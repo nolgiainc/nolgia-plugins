@@ -40,6 +40,26 @@ Film assistant category. The agent works through the NOLGIA Bridge tools
   more. After two failures on the same step, explain what failed in plain
   words and ask how to proceed.
 
+## Blender Python that bites
+
+- Operators act on the view layer's active object and selection, and some
+  (for example `bpy.ops.rigidbody.constraint_add`) ignore `temp_override`.
+  Before every operator, set `view_layer.objects.active` and the selection to
+  exactly the objects you mean, and check afterwards that none of the person's
+  own objects changed.
+- A driver that reads a custom property added in the same script can evaluate
+  to 0. After adding properties and drivers, call `obj.update_tag()` and
+  `bpy.context.view_layer.update()`, then check every driver's
+  `driver.is_valid` and read one driven value back.
+- Never put keyframes and a driver on the same channel. Key a custom property
+  instead and drive the channel from it.
+- Names must be unique in a file: suffix actions, materials and objects you
+  create per part with the part's name.
+- Imported models arrive flat shaded and scaled to about 1 m: shade them smooth
+  and scale them to real size.
+- `nolgia_app_export` renders from the scene camera. To export from another
+  camera, set `scene.camera` first and put it back afterwards.
+
 ## Using NOLGIA where it helps
 
 - Missing 3D models: generate them with `nolgia_generate_3d` from a picture the

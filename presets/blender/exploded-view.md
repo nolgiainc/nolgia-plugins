@@ -36,21 +36,30 @@ clear order. Every part ends exactly where it started.
    sits inside another's is inner). Fasteners (small parts, many copies) go
    first on explode and last on assemble.
 3. **Choose each part's direction.** Move along the axis the part would slide
-   out on: the axis from the product centre through the part's centre, snapped
-   to the nearest of the product's local axes when it is within 20 degrees.
-   Distance grows with the layer so nothing overlaps: roughly 0.6 times the
-   product's size per layer, then check for overlaps in the exploded pose and
-   push apart any pair whose bounding boxes intersect.
-4. **Animate.** Keyframe location only (not rotation, not scale) on each part:
-   home, exploded, hold, home. Stagger parts in the same layer by 2 to 3 frames
-   so the motion reads as a sequence. Use ease in and out (Bezier, auto clamped)
-   and a slight overshoot-free settle on assembly. Keep all keys on a single
-   action per part, named `NOLGIA Exploded view`.
+   out on: the axis from the product centre (the centre of the part that stays
+   put, not the bounding box, which small parts like blades or antennas skew)
+   through the part's centre, snapped to the nearest of the product's local
+   axes when it is within 20 degrees. Distance grows with the layer so nothing
+   overlaps: roughly 0.15 to 0.25 times the product's size per layer, then check
+   for overlaps in the exploded pose and push apart any pair whose bounding
+   boxes intersect.
+4. **Animate.** Give each part a custom property `explode` (0 home, 1 fully
+   out) and keyframe that: home, exploded, hold, home. Drive the part's
+   location from it: home position plus direction times layer distance times
+   `explode` times the `Explode distance` value on an empty
+   `Exploded View Controls`. Do not keyframe location itself, and do not drive
+   `delta_location` from the part's own location (that is a dependency cycle
+   and the offset silently does nothing). Stagger parts in the same layer by 2
+   to 3 frames so the motion reads as a sequence. Use ease in and out (Bezier,
+   auto clamped) and a slight overshoot-free settle on assembly. Name each
+   part's action `NOLGIA Exploded view <part name>`.
 5. **Guides (optional, ask).** Thin lines or dashed curves from each part's
    home to its exploded position, visible only during the hold.
 6. **Camera and light.** A three-quarter camera slightly above the product,
    framing the exploded pose with 15 percent margin, with a slow orbit of 20 to
-   30 degrees over the shot. A soft key light, a rim light and a neutral
+   30 degrees over the shot. Keep the camera at least 15 degrees away from
+   every explode direction, so no part moves straight toward or away from the
+   lens. A soft key light, a rim light and a neutral
    studio floor or backdrop in the `NOLGIA Exploded view` collection. Leave the
    person's lights alone; if they have their own, ask before adding.
 
@@ -65,6 +74,6 @@ clear order. Every part ends exactly where it started.
 ## Deliver
 
 Save, export an `mp4` preview, and tell the person: how the layers were
-ordered, how to change the explode distance (one controls value on an empty
-`Exploded View Controls` that scales every offset through a driver), and how
-to reorder a part (move its keyframes).
+ordered, how to change the explode distance (`Explode distance` on
+`Exploded View Controls` scales every offset), and how to reorder a part (move
+the keyframes on its `explode` value).

@@ -31,24 +31,33 @@ and the simulation re-baked.
    `NOLGIA Destruction` collection and hide the original (do not delete it).
    Prefer the Cell Fracture extension if it is installed
    (`bpy.ops.object.add_fracture_cell_objects`); check with
-   `addon_utils.check("bl_ext.blender_org.cell_fracture")` or the legacy name.
-   If it is not installed, do not install anything without asking: build a
+   `addon_utils.check("bl_ext.blender_org.cell_fracture")` or the legacy
+   `object_fracture_cell`. It is not bundled with Blender 4.2 or later, so the
+   fallback below is the usual path. If it is not installed, do not install
+   anything without asking: build a
    Voronoi fracture yourself (scatter points inside the bounds, weighted toward
    the impact point, and cut the mesh into convex cells with bmesh bisects per
    point pair), or ask the person to install Cell Fracture from Get Extensions.
    Keep piece count, seed and impact bias as custom properties on an empty named
-   `Destruction Controls` so the fracture can be regenerated.
+   `Destruction Controls` so the fracture can be regenerated. To refracture,
+   free the bake first, then delete the constraint empties, then the pieces:
+   deleting pieces while joints still point at them can crash Blender.
 2. **Hold it together until the moment.** Make every piece an active rigid body
    (mesh or convex hull collision, mass from volume), and connect neighbours
    with breakable Fixed constraints whose breaking threshold is exposed on the
-   controls empty. Pieces start still.
+   controls empty. With 60 substeps the threshold is an impulse per substep:
+   start near 5 to 10, scaled by the area the two pieces share. Pieces start
+   still.
 3. **The trigger.** A hit: a passive or animated rigid body (a simple rounded
    block or the person's own object) moving through the target at the break
    frame, with enough speed to exceed the threshold. A push or explosion: a
    Force field (Force or Wind) keyframed on at the break frame, centred at the
    impact point. A collapse: remove support by animating the lowest
    constraints' enabled state off.
-4. **Ground and weight.** Make sure there is a passive floor. Set the rigid
+4. **Ground and weight.** Make sure there is a passive floor. Give floors and
+   supports Mesh or Convex Hull collision: a Box shape is centred on the
+   object's origin, not its mesh, so pieces float or sink when the origin is
+   off centre. Set the rigid
    body world to 60 substeps and 20 solver iterations for stability; gravity
    stays real unless the person wants slow motion (then scale time instead).
 5. **Dust and small debris.** A particle system emitted from the fracture faces
