@@ -44,15 +44,17 @@ def call(server, method, path, body=None, token=TOKEN, headers=None):
 
 
 def enqueue(server, kind, args=None, timeout=120, caller=None):
-    headers = {"X-Mock-Caller": caller} if caller else None
+    """Queue a command as the caller side. caller="agent" sends the header
+    the API reads as the NOLGIA Agent (X-Nolgia-Surface: hermes)."""
+    headers = {"X-Nolgia-Surface": "hermes"} if caller == "agent" else None
     status, data = call(server, "POST", "/v1/bridge/commands",
                         {"app": "blender", "kind": kind, "args": args or {}, "timeout_seconds": timeout},
                         headers=headers)
     assert status == 201, (status, data)
-    return data["command"]["id"]
+    return data["id"]
 
 
 def wait_command(server, command_id, wait=10):
     status, data = call(server, "GET", "/v1/bridge/commands/%s?wait=%d" % (command_id, wait))
     assert status == 200, (status, data)
-    return data["command"]
+    return data

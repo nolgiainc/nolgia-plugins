@@ -17,7 +17,8 @@ EM_DASH = chr(0x2014)
 def manifest():
     """blender_manifest.toml, read without tomllib (Python 3.10 has none)."""
     out, section = {}, ""
-    text = open(os.path.join(EXT, "blender_manifest.toml"), encoding="utf-8").read()
+    with open(os.path.join(EXT, "blender_manifest.toml"), encoding="utf-8") as handle:
+        text = handle.read()
     for line in re.sub(r"\[\s*\n(.*?)\]", lambda m: "[" + m.group(1).replace("\n", " ") + "]", text, flags=re.S).splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
@@ -41,7 +42,8 @@ def source_files():
 def string_literals(path):
     """String constants in a Python file, leaving out docstrings (those are
     for developers and may show code)."""
-    tree = ast.parse(open(path, encoding="utf-8").read())
+    with open(path, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
     docstrings = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
@@ -68,7 +70,8 @@ class Manifest(unittest.TestCase):
         self.assertTrue(m["permissions.files"])
 
     def test_license_is_the_full_gpl3(self):
-        text = open(os.path.join(EXT, "LICENSE"), encoding="utf-8").read()
+        with open(os.path.join(EXT, "LICENSE"), encoding="utf-8") as handle:
+            text = handle.read()
         self.assertIn("GNU GENERAL PUBLIC LICENSE", text)
         self.assertIn("Version 3, 29 June 2007", text)
         self.assertIn("END OF TERMS AND CONDITIONS", text)

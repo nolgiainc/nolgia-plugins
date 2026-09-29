@@ -6,6 +6,7 @@ import socket
 import threading
 import time
 import unittest
+from unittest import mock
 
 import support
 
@@ -13,6 +14,7 @@ from core import PLUGIN_VERSION
 from core.api import ApiClient
 from core.commands import CAPABILITIES, ActivityLog
 from core.mainthread import MainThreadExecutor
+from core import worker as worker_module
 from core.worker import BridgeWorker, Status
 
 
@@ -31,7 +33,7 @@ class Harness:
         self.activity = ActivityLog()
         self.main_ident = None
         self.executor = MainThreadExecutor(run=run or self.default_run, on_status=self.activity.update)
-        self.snapshot = {"document": {"name": "untitled"}, "allow_agent": True, "app_version": "4.5.8"}
+        self.snapshot = {"document": {"name": ""}, "allow_agent": True, "app_version": "4.5.8"}
         self.auth_failed = []
         self.log = []
         self.worker = BridgeWorker(
@@ -87,8 +89,18 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(body, {
             "instance_id": "inst-test", "app": "blender", "app_version": "4.5.8",
             "plugin_version": PLUGIN_VERSION, "machine_name": "test-box",
-            "document": {"name": "untitled"}, "capabilities": list(CAPABILITIES), "allow_agent": True,
+            "document": {"name": ""}, "capabilities": list(CAPABILITIES), "allow_agent": True,
         })
+
+    def test_fields_are_kept_within_the_api_limits(self):
+        h = Harness(self.server.base_url)
+        h.worker.machine_name = "box\n" + "m" * 300
+        h.snapshot = {"document": {"name": "n" * 600, "path": "p" * 5000}, "app_version": "v" * 100}
+        body = h.worker.payload()
+        self.assertEqual(body["machine_name"], "box" + "m" * 125)
+        self.assertEqual(len(body["app_version"]), 64)
+        self.assertEqual(body["document"], {"name": "n" * 512})
+        self.assertEqual(h.worker.api.register_session(body)["document"], {"name": "n" * 512})
         self.assertEqual(len(self.live_sessions()), 1)
 
     def test_heartbeats_keep_coming(self):
@@ -205,6 +217,50 @@ class WorkerTest(unittest.TestCase):
         self.assertEqual(len(self.harness.auth_failed), 1)
         self.assertIn("Sign in again", self.harness.auth_failed[0])
         self.assertEqual(self.server.state.deleted_sessions, [])
+
+    def test_registers_again_after_a_disconnect_on_the_server(self):
+        h = self.start()
+        sid = h.worker.session_id
+        count = len(self.server.state.heartbeats)
+        support.call(self.server, "DELETE", "/v1/bridge/sessions/%s" % sid)  # e.g. another client closed it
+        until(lambda: len(self.server.state.heartbeats) > count, timeout=5)
+        until(lambda: self.live_sessions(), timeout=5)
+        self.assertEqual(h.worker.session_id, sid)  # same session, reconnected
+        cid = support.enqueue(self.server, "info")
+        self.assertEqual(support.wait_command(self.server, cid)["status"], "succeeded")
+
+    def test_413_is_not_retried(self):
+        h = self.start()
+        huge = {"status": "succeeded", "result": {"value": "x" * (1 << 20)}}
+        with mock.patch.object(worker_module, "result_body", lambda ok, result, error: huge):
+            cid = support.enqueue(self.server, "info")
+            done = support.wait_command(self.server, cid)
+        self.assertEqual(done["status"], "failed")
+        until(lambda: h.activity.items()[0]["status"] == "failed")
+        posts = [r for r in self.server.state.requests if r["path"].endswith("/%s/result" % cid)]
+        self.assertEqual([r["status"] for r in posts], [413])
+
+    def test_a_late_result_is_dropped(self):
+        release = threading.Event()
+        h = self.start(run=lambda t: (release.wait(10), (True, {}, None))[1])
+        cid = support.enqueue(self.server, "info")
+        until(lambda: h.worker.busy_with == cid)
+        self.server.state.commands[cid]["expires_at"] = time.time() - 0.01
+        release.set()
+        until(lambda: h.activity.items()[0]["status"] == "expired")
+        posts = [r for r in self.server.state.requests if r["path"].endswith("/%s/result" % cid)]
+        self.assertEqual([r["status"] for r in posts], [409])
+
+    def test_agent_commands_follow_allow_agent(self):
+        h = self.start(heartbeat=30)
+        cid = support.enqueue(self.server, "info", caller="agent")
+        self.assertEqual(support.wait_command(self.server, cid)["caller"], "agent")
+        h.snapshot = dict(h.snapshot, allow_agent=False)
+        h.worker.request_heartbeat()
+        until(lambda: self.server.state.heartbeats[-1]["body"]["allow_agent"] is False, timeout=3)
+        status, data = support.call(self.server, "POST", "/v1/bridge/commands",
+                                    {"app": "blender", "kind": "info"}, headers={"X-Nolgia-Surface": "hermes"})
+        self.assertEqual((status, data["code"]), (403, "agent_not_allowed"))
 
     def test_registers_again_when_the_session_disappears(self):
         h = self.start()

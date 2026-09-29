@@ -79,10 +79,10 @@ class Executor(unittest.TestCase):
         h = Harness()
         ticket = h.executor.submit(command(timeout=30))
         h.executor.pump()
-        h.now = 29.0
+        h.now = 26.0
         h.executor.pump()
         self.assertFalse(ticket.done)
-        h.now = 31.0
+        h.now = 27.0  # 3 s before expiry, so the refusal still reaches the API
         h.executor.pump()
         self.assertFalse(ticket.ok)
         self.assertIn("in time", ticket.error)

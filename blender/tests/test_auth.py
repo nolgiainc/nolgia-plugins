@@ -134,6 +134,8 @@ class DeviceLoginAgainstMock(unittest.TestCase):
                 server, "POST", "/mock/device/approve", {"user_code": prompt.user_code}, token=None)).start()
             token = login.wait_for_token(prompt)
             self.assertTrue(token.access_token.startswith("nol_"))
+            self.assertIsNone(token.email)  # not in the token response: GET /me has it
+            self.assertEqual(ApiClient(server.base_url, token.access_token).get_me()["email"], "test@nolgia.ai")
             # The new token works for the bridge.
             status, _ = support.call(server, "GET", "/v1/bridge/sessions", token=token.access_token)
             self.assertEqual(status, 200)

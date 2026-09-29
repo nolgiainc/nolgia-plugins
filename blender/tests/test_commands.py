@@ -55,6 +55,7 @@ class Kinds(unittest.TestCase):
         self.assertIsNone(parse_frames(None))
         self.assertEqual(parse_frames(7), (7, 7))
         self.assertEqual(parse_frames("7"), (7, 7))
+        self.assertEqual(parse_frames("24"), (24, 24))  # what the MCP tool sends
         self.assertEqual(parse_frames("1-120"), (1, 120))
         self.assertEqual(parse_frames([10, 20]), (10, 20))
         self.assertEqual(parse_frames({"start": 3, "end": 9}), (3, 9))
@@ -71,8 +72,12 @@ class CommandParsing(unittest.TestCase):
                        "claimed_at": "2026-09-29T06:00:10Z",
                        "expires_at": "2026-09-29T06:02:00Z"}, received_at=100.0)
         self.assertEqual(cmd.timeout, 110.0)
-        self.assertEqual(cmd.deadline, 210.0)
-        self.assertEqual(cmd.remaining(now=200.0), 10.0)
+        self.assertEqual(cmd.expires, 210.0)
+        # stops 3 s early, so a failure still reaches the API before expires_at
+        self.assertEqual(cmd.deadline, 207.0)
+        self.assertEqual(cmd.remaining(now=200.0), 7.0)
+        short = Command({"id": "c", "kind": "info", "timeout_seconds": 5}, received_at=0.0)
+        self.assertEqual(short.deadline, 3.75)
 
     def test_timeout_fallbacks(self):
         self.assertEqual(Command({"id": "c", "kind": "info", "timeout_seconds": 30}).timeout, 30.0)
@@ -97,6 +102,12 @@ class ResultShaping(unittest.TestCase):
         self.assertEqual(body["status"], "succeeded")
         self.assertLessEqual(len(json.dumps(body)), MAX_RESULT_BYTES)
         self.assertEqual(body["result"]["value"], 1)
+
+    def test_size_counts_go_html_escaping(self):
+        # Go writes each < as \u003c: 6 bytes. A result under 1 MB in Python can
+        # be over it on the API side, so the plugin measures it the Go way.
+        body = result_body(True, {"value": "<" * 200_000, "stdout": "", "stderr": ""})
+        self.assertEqual(body["status"], "failed")
 
     def test_big_value_fails_with_advice(self):
         body = result_body(True, {"value": ["y" * 1000] * 2000, "stdout": "", "stderr": ""})

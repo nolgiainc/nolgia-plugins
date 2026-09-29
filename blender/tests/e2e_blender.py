@@ -236,9 +236,9 @@ class Caller:
         self.root = root_url
         self.token = token
 
-    def http(self, method, path, body=None, auth=True, raw=False):
+    def http(self, method, path, body=None, auth=True, raw=False, headers=None):
         data = None if body is None else (body if isinstance(body, bytes) else json.dumps(body).encode())
-        req = urllib.request.Request(self.root + path, data=data, method=method)
+        req = urllib.request.Request(self.root + path, data=data, method=method, headers=headers or {})
         if auth:
             req.add_header("Authorization", "Bearer " + self.token)
         if body is not None and not isinstance(body, bytes):
@@ -255,14 +255,14 @@ class Caller:
         status, data = self.http("POST", "/v1/bridge/commands",
                                  {"app": "blender", "kind": kind, "args": args or {}, "timeout_seconds": timeout})
         assert status == 201, "enqueue %s: %s %s" % (kind, status, data)
-        return data["command"]["id"]
+        return data["id"]
 
     def wait(self, command_id, limit=300):
         end = time.time() + limit
         while True:
             status, data = self.http("GET", "/v1/bridge/commands/%s?wait=25" % command_id)
             assert status == 200, data
-            cmd = data["command"]
+            cmd = data
             if cmd["status"] not in ("queued", "running") or time.time() > end:
                 return cmd
 
@@ -326,6 +326,7 @@ def main():
     user_dir = os.path.join(work, "blender-user")
     dist = os.path.join(work, "dist")
     files = os.path.join(work, "files")
+    exports = os.path.join(work, "exports")
     # Blender ignores BLENDER_USER_RESOURCES (and loads your own settings and
     # add-ons) when the folder does not exist yet, so create it first.
     for folder in (user_dir, dist, files):
@@ -355,7 +356,8 @@ def main():
     server = MockBridgeServer(tokens=(TOKEN,)).start()
     caller = Caller(server.root_url, TOKEN)
     env = dict(base_env, NOLGIA_TOKEN=TOKEN, NOLGIA_API_URL=server.base_url,
-               NOLGIA_BRIDGE_AUTOCONNECT="1", NOLGIA_ASK_BEFORE_RUN="0")
+               NOLGIA_BRIDGE_AUTOCONNECT="1", NOLGIA_ASK_BEFORE_RUN="0",
+               NOLGIA_EXPORT_DIR=host.to_blender(exports))
     log_path = os.path.join(work, "blender.log")
     proc = host.popen(["--background", "--factory-startup", "--python-exit-code", "4",
                        "--python-expr", BOOTSTRAP], env, log_path)
@@ -377,7 +379,7 @@ def main():
             assert session["capabilities"] == list(CAPABILITIES), session["capabilities"]
             assert session["plugin_version"] == PLUGIN_VERSION
             assert session["app_version"].startswith("4."), session["app_version"]
-            assert session["document"] == {"name": "untitled"}, session["document"]
+            assert session["document"] == {"name": ""}, session["document"]  # unsaved: empty name
             assert session["allow_agent"] is True
             assert session["machine_name"]
             assert session["instance_id"]
@@ -387,7 +389,7 @@ def main():
 
         def info():
             res = expect_ok(caller.command("info"))
-            assert res["document"]["name"] == "untitled"
+            assert res["document"]["name"] == ""
             assert res["scene"]["name"] == "Scene"
             assert (res["scene"]["frame_start"], res["scene"]["frame_end"]) == (1, 250)
             assert res["scene"]["fps"] == 24
@@ -466,6 +468,23 @@ def main():
 
         checks.check("preview: renders, uploads a PNG", preview)
 
+        def preview_too_big_for_inline():
+            # Lower the inline limit for this one preview: the PNG is over it,
+            # so the plugin sends a JPEG instead.
+            code = "import os\nos.environ['NOLGIA_PREVIEW_MAX_BYTES'] = '%s'"
+            expect_ok(caller.command("run", {"language": "python", "code": code % "200000"}))
+            try:
+                res = expect_ok(caller.command("preview", {"width": 1920}))
+            finally:
+                expect_ok(caller.command("run", {"language": "python", "code": code % ""}))
+            assert res["mime_type"] == "image/jpeg" and (res["width"], res["height"]) == (1920, 1080), res
+            data = caller.asset_bytes(res["asset_id"])
+            assert data[:3] == b"\xff\xd8\xff" and len(data) <= 200000, (data[:4], len(data))
+            up = [u for u in caller.state()["uploads"] if u["asset_id"] == res["asset_id"]][0]
+            assert up["content_type"] == "image/jpeg" and up["filename"].endswith(".jpg"), up
+
+        checks.check("preview: JPEG when the PNG is too big to show", preview_too_big_for_inline)
+
         def preview_bad_width():
             cmd = caller.command("preview", {"width": 5000})
             assert cmd["status"] == "failed" and "at most 1920" in cmd["error"], cmd
@@ -525,21 +544,26 @@ def main():
 
         checks.check("export: glb", export_glb)
 
-        def export_blend():
+        def export_blend_unsaved():
+            uploads = len(caller.state()["uploads"])
             res = expect_ok(caller.command("export", {"format": "blend", "filename": "shot"}))
-            assert res["filename"] == "shot.blend", res
-            data = caller.asset_bytes(res["asset_id"])
-            assert data[:7] == b"BLENDER" or data[:4] == b"\x28\xb5\x2f\xfd", data[:16]
-            up = [u for u in caller.state()["uploads"] if u["asset_id"] == res["asset_id"]][0]
-            assert up["content_type"] == "application/x-blender", up
+            assert res["asset_id"] is None and res["note"].startswith("Blender files stay on this computer"), res
+            local = host.from_blender(res["path"])
+            assert local == os.path.join(exports, "shot.blend"), local
+            with open(local, "rb") as handle:
+                head = handle.read(7)
+            assert head == b"BLENDER" or head[:4] == b"\x28\xb5\x2f\xfd", head
+            again = expect_ok(caller.command("export", {"format": "blend", "filename": "shot"}))
+            assert again["path"] != res["path"] and os.path.isfile(host.from_blender(again["path"])), again
+            assert len(caller.state()["uploads"]) == uploads, "a .blend was uploaded"
 
-        checks.check("export: blend (save a copy)", export_blend)
+        checks.check("export: blend stays local, never overwrites", export_blend_unsaved)
 
         def export_png_and_mp4():
             expect_ok(caller.command("run", {"language": "python", "code":
                 "import bpy\ns = bpy.context.scene\ns.render.resolution_percentage = 10\n"
                 "s.render.engine = 'BLENDER_WORKBENCH'"}))
-            res = expect_ok(caller.command("export", {"format": "png", "frames": 1}))
+            res = expect_ok(caller.command("export", {"format": "png", "frames": "1"}))
             assert png_size(caller.asset_bytes(res["asset_id"])) == (192, 108)
             res = expect_ok(caller.command("export", {"format": "mp4", "frames": "1-6"}))
             made["mp4"] = res["asset_id"]
@@ -595,6 +619,33 @@ def main():
 
         checks.check("save, then open the saved file", save_and_open)
 
+        def export_blend_next_to_file():
+            res = expect_ok(caller.command("export", {"format": "blend"}))
+            assert host.from_blender(res["path"]) == os.path.join(files, "saved-copy.blend"), res
+            info_ = expect_ok(caller.command("info"))
+            assert info_["document"]["name"] == "saved.blend", "the copy replaced the open file"
+
+        checks.check("export: blend copy next to the saved file", export_blend_next_to_file)
+
+        def allow_agent_toggle():
+            prefs = "bpy.context.preferences.addons[%r].preferences" % MODULE
+            status, data = caller.http("POST", "/v1/bridge/commands", {"app": "blender", "kind": "info"},
+                                       headers={"X-Nolgia-Surface": "hermes"})
+            assert status == 201 and data["caller"] == "agent", data
+            assert caller.wait(data["id"])["status"] == "succeeded"
+            expect_ok(caller.command("run", {"language": "python", "code":
+                "import bpy\n%s.allow_agent = False" % prefs}))
+            end = time.time() + 10
+            while time.time() < end and caller.state()["last_heartbeat"]["allow_agent"] is not False:
+                time.sleep(0.2)
+            status, data = caller.http("POST", "/v1/bridge/commands", {"app": "blender", "kind": "info"},
+                                       headers={"X-Nolgia-Surface": "hermes"})
+            assert (status, data.get("code")) == (403, "agent_not_allowed"), (status, data)
+            expect_ok(caller.command("run", {"language": "python", "code":
+                "import bpy\n%s.allow_agent = True" % prefs}))
+
+        checks.check("Allow NOLGIA Agent off: agent refused", allow_agent_toggle)
+
         def import_video():
             res = expect_ok(caller.command("import_asset", {"asset_id": made["mp4"]}))
             assert res["kind"] == "video" and len(res["imported"]) == 1, res
@@ -612,7 +663,7 @@ def main():
             end = time.time() + 30
             while time.time() < end:
                 status, data = caller.http("GET", "/v1/bridge/commands/%s" % cid)
-                if data["command"]["status"] == "running":
+                if data["status"] == "running":
                     break
                 time.sleep(0.1)
             status, data = caller.http("POST", "/v1/bridge/commands/%s/cancel" % cid)
