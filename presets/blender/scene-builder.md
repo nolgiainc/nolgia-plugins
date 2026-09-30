@@ -23,8 +23,12 @@ separate and editable so the person can keep directing it.
 4. Which models do they already have? For anything missing, offer to make it
    with NOLGIA: `nolgia_generate_3d` from a photo of the object or from an
    image made with `nolgia_text_to_image`. For a character, make a full-body
-   image of them as a figure (standing in an A pose on a plain background) and
-   turn that into the model; never work from a photo of a real person. If
+   image of them as a figure on a plain background, in the pose the shot needs
+   (seated on a plain block if they sit; an A pose only if you will rig them),
+   and turn that into the model; never work from a photo of a real person.
+   Generated people bake the reference image's lighting into their texture and
+   faces can read wrong, so plan to frame them so faces are not the main read
+   (back light, profiles, shallow focus, details). If
    `hunyuan3d-v3` times out, `trellis` is the fast, cheap fallback. Say the
    rough credit cost before generating, and generate only what they agree to.
 
@@ -38,28 +42,33 @@ separate and editable so the person can keep directing it.
    floor, walls or terrain, the big shapes that define the silhouette. Put it in
    `NOLGIA Set`. Use the person's assets where they have them.
 3. **Bring in characters and props.** Import each with `nolgia_app_import`
-   (GLB), shade smooth, scale to real size (people 1.6 to 1.9 m), place on the
-   floor (no floating, no clipping), and put them in `NOLGIA Cast` and
-   `NOLGIA Props`.
+   (GLB), shade smooth, scale to real size (people 1.6 to 1.9 m standing; seat
+   to crown 0.8 to 1.0 m seated), place on the floor or seat (no floating, no
+   clipping; hide a generated seat block inside the real seat), and put them in
+   `NOLGIA Cast` and `NOLGIA Props`.
 4. **Pose.** Rigged characters: pose the armature bones for the action with the
    weight on the right foot, eyelines toward what they look at, hands touching
    what they hold. Unrigged generated characters: keep them as statues and say
    so; offer to rig later.
 5. **Light.** A key, a fill or bounce, and a rim or practical that motivates the
    mood; a world colour or an HDRI (make a sky or environment plate with
-   `nolgia_text_to_image` if asked). Name every light for its job.
+   `nolgia_text_to_image` if asked). A background plate goes far away as an
+   emission plane: keep every camera inside its field of view, extend its sky
+   if the wide sees above it, and match the sun lamp to the sun in the plate.
+   Name every light for its job. Prefer natural, motivated light (sun, sky,
+   bounce, practicals) unless the brief asks for a stylised look.
 6. **Cameras.** Three cameras named for their framing (`Cam Wide`,
    `Cam Medium`, `Cam Close`), each composed on thirds with a clear foreground,
    subject and background, 24 to 35 mm for the wide, 50 mm for the medium, 85
    mm for the close. Add depth of field on the medium and close, focused on the
-   subject's eyes.
+   subject's eyes, or on the action for a detail close (hands, an object).
 
 ## Check
 
 - Preview every camera. Each must read the action in one glance: subject
   sharp, eyeline clear, nothing important cut by the frame edge.
-- Scale check in code: every character between 1.5 and 2.0 m tall unless the
-  brief says otherwise; every object's lowest point within 1 cm of the floor or
+- Scale check in code: every standing character between 1.5 and 2.0 m tall
+  (seated: seat to crown 0.8 to 1.0 m) unless the brief says otherwise; every object's lowest point within 1 cm of the floor or
   of the object it rests on (a lid on a bin, a crate on a crate).
 
 ## Deliver

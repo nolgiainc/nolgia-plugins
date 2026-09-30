@@ -56,7 +56,12 @@ Film assistant category. The agent works through the NOLGIA Bridge tools
 - Names must be unique in a file: suffix actions, materials and objects you
   create per part with the part's name.
 - Imported models arrive flat shaded and scaled to about 1 m: shade them smooth
-  and scale them to real size.
+  and scale them to real size. The GLB's Y-up to Z-up turn is stored as a
+  quaternion, so `rotation_euler` reads 0: read `rotation_quaternion` or the
+  world matrix.
+- Per-polygon Python loops over a large generated mesh can exceed the command
+  time limit; read and write mesh data with `foreach_get` / `foreach_set` and
+  numpy instead.
 - `nolgia_app_export` renders from the scene camera. To export from another
   camera, set `scene.camera` first and put it back afterwards.
 
