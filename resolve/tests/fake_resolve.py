@@ -121,6 +121,7 @@ class Timeline(PyRemoteObject):
         self.selected = []
         self.playhead = self.start
         self.playhead_set = True
+        self.ignore_sets = 0  # Resolve 21.1.1 sometimes answers True without moving
         self.uid = uid or "tl-" + name
         self.markers = {}
 
@@ -175,9 +176,13 @@ class Timeline(PyRemoteObject):
         if self._no_playhead():
             return False
         try:
-            self.playhead = timecode.to_frames(text, self.fps)
+            frame = timecode.to_frames(text, self.fps)
         except ValueError:
             return False
+        if self.ignore_sets:
+            self.ignore_sets -= 1
+            return True
+        self.playhead = frame
         self.playhead_set = True
         return True
 

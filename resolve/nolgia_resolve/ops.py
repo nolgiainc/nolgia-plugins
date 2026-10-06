@@ -36,6 +36,10 @@ NEW_TIMELINE_NAME = "NOLGIA timeline"
 RAW_STILL_EXTENSIONS = (".bmp", ".ppm")
 MAX_LIST = 200
 RENDER_DONE = ("Complete", "Failed", "Cancelled", "Background Render Cancelled", "Remote Render Cancelled")
+# After it reports a render Complete, Resolve 21.1.1 moves the playhead to the
+# start on its own about half a second later; wait this long before putting
+# the playhead back.
+RENDER_SETTLE_SECONDS = 1.0
 MEDIA_KINDS = ("image", "video", "audio")
 # Pages where Resolve 21.1.1 has no timeline playhead for scripts
 # (GetCurrentTimecode answers None, SetCurrentTimecode fails).
@@ -374,14 +378,27 @@ class Ops:
         before_tc = call(tl, "GetCurrentTimecode")
         target = self.offset_timecode(facts, offset)
         try:
-            if target != before_tc and not call(tl, "SetCurrentTimecode", target):
+            if target != before_tc and not self.set_playhead(tl, target):
                 raise CommandError("DaVinci Resolve did not move the playhead to %s." % target)
             return action(target)
         finally:
             if before_tc and target != before_tc:
-                call(tl, "SetCurrentTimecode", before_tc)
+                self.set_playhead(tl, before_tc)
             if switched and before_tl is not None:
                 call(project, "SetCurrentTimeline", before_tl)
+
+    def set_playhead(self, tl, text, tries=3):
+        """SetCurrentTimecode, read back. Resolve 21.1.1 sometimes answers
+        True without moving (right after a timeline is made, or while it
+        moves the playhead itself after a render), so set it again."""
+        for attempt in range(tries):
+            ok = call(tl, "SetCurrentTimecode", text, default=False)
+            if ok and call(tl, "GetCurrentTimecode") == text:
+                return True
+            if not ok and attempt == tries - 1:
+                return False
+            time.sleep(0.2)
+        return call(tl, "GetCurrentTimecode") == text
 
     def _export_still(self, project, path):
         ok = call(project, "ExportCurrentFrameAsStill", path, default=False)
@@ -608,7 +625,7 @@ class Ops:
             call(project, "SetCurrentRenderMode", restore["mode"])
         rendered = restore.get("render_timeline")
         if rendered is not None and restore.get("timecode") and call(rendered, "GetCurrentTimecode") != restore["timecode"]:
-            call(rendered, "SetCurrentTimecode", restore["timecode"])
+            self.set_playhead(rendered, restore["timecode"])
         if restore.get("timeline") is not None:
             call(project, "SetCurrentTimeline", restore["timeline"])
         if restore.get("page") and call(self.resolve, "GetCurrentPage") != restore["page"]:
@@ -1199,6 +1216,8 @@ class Finisher:
         folder = job["folder"]
         try:
             status = self._wait_render(command, job["job"])
+            if status.get("status") == "Complete":
+                self.sleep(RENDER_SETTLE_SECONDS)  # Resolve moves the playhead once more after Complete
         finally:
             try:
                 self.on_main(lambda: self.ops.finish_render(job["job"], job["restore"]))

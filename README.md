@@ -436,10 +436,19 @@ each line starting with `NOLGIA:`.
 ## NOLGIA for DaVinci Resolve
 
 A script plugin for DaVinci Resolve Studio 21.1 and newer (since 21.1 Resolve
-runs Python scripts only in the Studio edition). It uses only Python's
-standard library, so there is nothing else to install. Tested on Windows; it is written
-for macOS and Linux too, but has not been run there yet (see
+runs Python scripts only in the Studio edition). It needs Python 3.8 or
+newer and nothing outside Python's standard library. Tested on Windows; it is
+written for macOS and Linux too, but has not been run there yet (see
 [Tested on](#tested-on)).
+
+Which Python runs it: Resolve runs a Scripts menu script in its own
+`fuscript` program with a Python it finds on the computer. On Windows,
+Resolve 21.1 took the one named in `PYTHON3HOME` (or `PYTHONHOME`) when set,
+else the one in the registry (a per-user install before a machine-wide one;
+`PATH` plays no part), not its own bundled Python 3.14. What it picks on a
+computer with no Python installed, and on macOS, has not been checked; on a
+Mac, the Python 3 that Apple's Command Line Tools install (3.9 at the time of
+writing) is new enough if Resolve binds to it.
 
 ### Install and use
 
@@ -574,17 +583,22 @@ the project since it was last saved.
 - Commands run one at a time on the NOLGIA script's own thread, the only one
   that calls Resolve. A long `run` holds the NOLGIA window until it ends; a
   render does not (the plugin checks on it between clicks).
-- Rendering opens Resolve's Deliver page and moves the playhead; the plugin
-  puts both back. Adding clips to a timeline leaves Resolve's playhead at its
-  end. On the Media and Fusion pages Resolve has no timeline playhead for
-  scripts, so `preview`, a `png` export and `apply_to: "current"` switch to
-  the Edit page for a moment and back.
+- Rendering opens Resolve's Deliver page and moves the playhead, and about
+  half a second after Resolve reports the render complete it moves the
+  playhead to the start once more; the plugin waits a second, then puts the
+  page and the playhead back. Adding clips to a timeline leaves Resolve's
+  playhead at its end. On the Media and Fusion pages Resolve has no timeline
+  playhead for scripts, so `preview`, a `png` export and `apply_to:
+  "current"` switch to the Edit page for a moment and back. Resolve 21.1.1
+  sometimes answers a playhead move with True without moving (right after a
+  timeline is made), so the plugin reads the playhead back and sets it again.
 - `append` adds each clip after the timeline's last clip, whatever its
   track, so audio and pictures follow one another rather than overlap.
 - Resolve runs a Scripts menu script in its own `fuscript` program, with the
   Python it finds on the computer (on the Windows test machine that was an
-  installed Python 3.11, not Resolve's own 3.14). The plugin uses only
-  Python's standard library and has been run with Python 3.10, 3.11 and 3.14.
+  installed Python 3.11, not Resolve's own 3.14). The plugin needs Python
+  3.8 or newer: its unit tests pass on 3.8, 3.9, 3.10 and 3.11, and it ran
+  under 3.11 inside Resolve and under Resolve's own 3.14 with `--serve`.
 - Resolve finds new scripts when it starts, so restart it after installing or
   updating.
 
@@ -602,7 +616,18 @@ Windows 11 with DaVinci Resolve Studio 21.1.1 (build 10), on October 5,
   (`resolve/tests/inapp_resolve.py`, 10 checks). Choosing NOLGIA from the
   menu by hand and the look of the window have not been checked yet.
 
-Not yet run on macOS or Linux, and not yet against the real NOLGIA API.
+And against the real NOLGIA API (api.nolgia.ai) the same day, in a
+throwaway project, headless and in the app: `info`, `run`, `preview`,
+`import_asset` of library assets, of a list of them and of the
+`kodak-portra-400` color preset applied to clips, `export` of a frame and
+of a two second H.264 MP4, `save`, `open`; `status`, `info`, `run`,
+`preview` and `export` went through NOLGIA's MCP server (mcp.nolgia.ai) as
+an agent's would, the rest through `POST /bridge/commands`
+(`resolve/tests/e2e_resolve.py --api prod`, 30 checks;
+`resolve/tests/inapp_resolve.py --api prod`, 11 checks). Every asset the
+runs made was deleted afterwards.
+
+Not yet run on macOS or Linux.
 
 ### Development
 
@@ -612,7 +637,7 @@ of [`blender/core/`](blender/core/), kept the same by
 [`resolve/tests/test_core_copy.py`](resolve/tests/test_core_copy.py), which
 lists the few places they may differ (the app's constants, the argument
 checks, the app's name in messages): copy a fix made in one to the other.
-The unit tests run with plain Python 3.10 or newer against stand-ins for
+The unit tests run with plain Python 3.8 or newer against stand-ins for
 Resolve and its UIManager (which follow what Resolve 21.1.1 was seen to do)
 and the mock API, including the macOS and Linux paths and installer with the
 platform patched:

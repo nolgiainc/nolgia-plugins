@@ -25,6 +25,14 @@ against the mock API.
 Usage:
     python3 resolve/tests/e2e_resolve.py
     python3 resolve/tests/e2e_resolve.py --use-running --keep
+    python3 resolve/tests/e2e_resolve.py --use-running --api prod --token-file ~/.config/nolgia/tokens.json
+
+With --api prod it runs against the real NOLGIA API with your token (never
+printed): the commands an agent reaches through the MCP server go through
+mcp.nolgia.ai (status, info, run, preview, export), the rest through
+POST /bridge/commands. It uploads a few small test files to your library and,
+unless --keep-assets, deletes every asset the run made (listing them). Only
+free operations: nothing is generated, no credits are spent.
 
 Works on Windows, macOS and Linux, and from WSL with the Windows Resolve
 (paths through wslpath, variables through WSLENV).
@@ -59,6 +67,9 @@ from nolgia_resolve.core import PLUGIN_VERSION  # noqa: E402
 from nolgia_resolve.core.commands import CAPABILITIES  # noqa: E402
 
 TOKEN = "e2e-token"
+PROD_API = "https://api.nolgia.ai/v1"
+PROD_MCP = "https://mcp.nolgia.ai/mcp"
+MP4_FRAMES = "0-47"  # two seconds at 24 fps
 WSL = os.path.exists("/proc/version") and "microsoft" in open("/proc/version").read().lower()
 
 DEFAULTS = {
@@ -279,26 +290,34 @@ def png_size(data):
 
 
 class Caller:
-    """What the MCP server does: enqueue a command and wait for it."""
+    """What the MCP server does: enqueue a command and wait for it. Against
+    the mock, or (mock=False) the real API, where test files go through the
+    signed upload flow and every asset the run makes is remembered so it can
+    be deleted afterwards."""
 
-    def __init__(self, root_url, token):
+    def __init__(self, root_url, token, mock=True):
         self.root = root_url
         self.token = token
+        self.mock = mock
+        self.assets = []  # (asset_id, name) made by this run
 
-    def http(self, method, path, body=None, auth=True, raw=False, headers=None):
+    def http(self, method, path, body=None, auth=True, raw=False, headers=None, url=None, timeout=60):
         data = None if body is None else (body if isinstance(body, bytes) else json.dumps(body).encode())
-        req = urllib.request.Request(self.root + path, data=data, method=method, headers=headers or {})
+        req = urllib.request.Request(url or (self.root + path), data=data, method=method, headers=headers or {})
         if auth:
             req.add_header("Authorization", "Bearer " + self.token)
         if body is not None and not isinstance(body, bytes):
             req.add_header("Content-Type", "application/json")
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 payload = resp.read()
                 return resp.status, (payload if raw else (json.loads(payload) if payload else None))
         except urllib.error.HTTPError as err:
             payload = err.read()
-            return err.code, (json.loads(payload) if payload else None)
+            try:
+                return err.code, (payload if raw else (json.loads(payload) if payload else None))
+            except ValueError:
+                return err.code, payload
 
     def enqueue(self, kind, args=None, timeout=120, headers=None):
         status, data = self.http("POST", "/v1/bridge/commands",
@@ -313,26 +332,146 @@ class Caller:
             status, data = self.http("GET", "/v1/bridge/commands/%s?wait=25" % command_id)
             assert status == 200, data
             if data["status"] not in ("queued", "running") or time.time() > end:
+                self.remember(data)
                 return data
+
+    def remember(self, command):
+        result = command.get("result") if isinstance(command, dict) else None
+        if isinstance(result, dict) and result.get("asset_id"):
+            self.assets.append((result["asset_id"], result.get("filename") or command.get("kind")))
 
     def command(self, kind, args=None, timeout=120):
         return self.wait(self.enqueue(kind, args, timeout))
 
     def state(self):
+        assert self.mock, "the mock's state is only there against the mock"
         return self.http("GET", "/mock/state", auth=False)[1]
 
     def asset_bytes(self, asset_id):
-        status, data = self.http("GET", "/mock/assets/%s/bytes" % asset_id, auth=False, raw=True)
+        if self.mock:
+            status, data = self.http("GET", "/mock/assets/%s/bytes" % asset_id, auth=False, raw=True)
+            assert status == 200, status
+            return data
+        status, asset = self.http("GET", "/v1/assets/%s" % asset_id)
+        assert status == 200, (status, asset)
+        status, data = self.http("GET", "", raw=True, auth=False, url=asset["signed_url"], timeout=300)
         assert status == 200, status
         return data
 
     def seed_asset(self, filename, content_type, data, project_id=None):
-        url = "/mock/assets?" + urllib.parse.urlencode({"filename": filename, "content_type": content_type})
-        if project_id:
-            url += "&project_id=" + project_id
-        status, asset = self.http("POST", url, data, auth=False)
-        assert status == 201, asset
+        """A test file in the library, as a person's own asset would be."""
+        if self.mock:
+            url = "/mock/assets?" + urllib.parse.urlencode({"filename": filename, "content_type": content_type})
+            if project_id:
+                url += "&project_id=" + project_id
+            status, asset = self.http("POST", url, data, auth=False)
+            assert status == 201, asset
+            return asset["id"]
+        assert not project_id, "project assets are only seeded against the mock"
+        # The plugin names clips after the display name, so keep it the file's
+        # name; the tag marks the run's files.
+        status, slot = self.http("POST", "/v1/assets/uploads", {
+            "filename": filename, "content_type": content_type, "size_bytes": len(data),
+            "display_name": filename, "tags": ["nolgia-e2e"]})
+        assert status == 201, (status, slot)
+        status, _ = self.http("PUT", "", data, raw=True, auth=False, url=slot["upload_url"],
+                              headers={"Content-Type": content_type, "Content-Length": str(len(data))})
+        assert status in (200, 201), status
+        status, asset = self.http("POST", "/v1/assets/uploads/%s/complete" % slot["upload_id"])
+        assert status == 200, (status, asset)
+        self.assets.append((asset["id"], filename))
         return asset["id"]
+
+    def color_presets(self):
+        """(slug, name) of the API's color presets."""
+        status, data = self.http("GET", "/v1/color-presets", auth=False)
+        assert status == 200, (status, data)
+        return [(p["slug"], p["name"]) for p in data["presets"]]
+
+    def delete_assets(self):
+        """Delete every asset this run made: to the trash, then for good.
+        Returns [(asset_id, name, outcome)]."""
+        out = []
+        seen = set()
+        for asset_id, name in self.assets:
+            if asset_id in seen:
+                continue
+            seen.add(asset_id)
+            if self.mock:
+                out.append((asset_id, name, "mock"))
+                continue
+            trashed = self.http("DELETE", "/v1/assets/%s" % asset_id)[0]
+            gone = self.http("DELETE", "/v1/assets/%s/permanent" % asset_id)[0]
+            check = self.http("GET", "/v1/assets/%s" % asset_id)[0]
+            out.append((asset_id, name, "trash %s, permanent %s, then GET %s" % (trashed, gone, check)))
+        return out
+
+
+class Mcp:
+    """A client of NOLGIA's MCP server, as Claude or Cursor would use it."""
+
+    def __init__(self, url, token):
+        self.url = url
+        self.token = token
+        self.session = None
+        self.next_id = 1
+        self.tools = None
+
+    def post(self, body):
+        headers = {"Authorization": "Bearer " + self.token, "Content-Type": "application/json",
+                   "Accept": "application/json, text/event-stream", "MCP-Protocol-Version": "2025-06-18"}
+        if self.session:
+            headers["Mcp-Session-Id"] = self.session
+        req = urllib.request.Request(self.url, data=json.dumps(body).encode(), headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            sid = resp.headers.get("Mcp-Session-Id")
+            if sid:
+                self.session = sid
+            raw = resp.read()
+            kind = resp.headers.get("Content-Type", "")
+        if not raw:
+            return None
+        if kind.startswith("text/event-stream"):
+            messages = [json.loads(l[5:].strip()) for l in raw.decode("utf-8").splitlines() if l.startswith("data:")]
+            return messages[-1] if messages else None
+        return json.loads(raw)
+
+    def start(self):
+        reply = self.post({"jsonrpc": "2.0", "id": self.next_id, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "nolgia-resolve-e2e", "version": PLUGIN_VERSION}}})
+        self.next_id += 1
+        assert reply and "result" in reply, reply
+        self.post({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        listed = self.post({"jsonrpc": "2.0", "id": self.next_id, "method": "tools/list", "params": {}})
+        self.next_id += 1
+        self.tools = sorted(t["name"] for t in listed["result"]["tools"])
+        return reply["result"]
+
+    def call(self, name, arguments):
+        """The tool's structured answer (its text content as JSON) and the
+        other content parts (an image for preview)."""
+        reply = self.post({"jsonrpc": "2.0", "id": self.next_id, "method": "tools/call",
+                           "params": {"name": name, "arguments": arguments}})
+        self.next_id += 1
+        assert reply and "result" in reply, reply
+        result = reply["result"]
+        content = result.get("content") or []
+        text = next((c["text"] for c in content if c.get("type") == "text"), "")
+        if result.get("isError"):
+            raise AssertionError("%s failed: %s" % (name, text[:800]))
+        try:
+            data = json.loads(text)
+        except ValueError:
+            data = {"text": text}
+        return data, [c for c in content if c.get("type") != "text"]
+
+    def finish(self, output, limit=600):
+        """Follow a command the tool handed back unfinished."""
+        end = time.time() + limit
+        while output.get("status") in ("queued", "running") and time.time() < end:
+            output, _ = self.call("nolgia_app_command", {"command_id": output["command_id"]})
+        return output
 
 
 # ------------------------------------------------------------------ runner
@@ -342,6 +481,11 @@ class Checks:
     def __init__(self):
         self.passed = []
         self.failed = []
+        self.skipped = []
+
+    def skip(self, name, why):
+        self.skipped.append(name)
+        print("SKIP %-52s       %s" % (name, why), flush=True)
 
     def check(self, name, fn):
         started = time.time()
@@ -391,7 +535,14 @@ def main():
     parser.add_argument("--use-running", action="store_true",
                         help="use the Resolve already open (its open project is switched to a throwaway one and back)")
     parser.add_argument("--keep", action="store_true", help="keep the scratch folder")
+    parser.add_argument("--api", choices=("mock", "prod"), default="mock")
+    parser.add_argument("--api-url", default=PROD_API, help="for --api prod")
+    parser.add_argument("--mcp-url", default=PROD_MCP, help="for --api prod; empty to skip the MCP server")
+    parser.add_argument("--token-file", default=os.path.expanduser("~/.config/nolgia/tokens.json"),
+                        help="JSON with access_token, for --api prod (never printed)")
+    parser.add_argument("--keep-assets", action="store_true", help="prod: leave the run's assets in the library")
     opts = parser.parse_args()
+    prod = opts.api == "prod"
     if WSL and opts.resolve_python[1:3] == ":\\":
         opts.resolve_python = subprocess.check_output(["wslpath", "-u", opts.resolve_python], text=True).strip()
         opts.resolve = subprocess.check_output(["wslpath", "-u", opts.resolve], text=True).strip()
@@ -453,12 +604,25 @@ def main():
     if not checks.check("make and open a throwaway project", setup):
         return cleanup_and_finish(host, checks, work, opts, started, project_name, state, luts)
 
-    server = MockBridgeServer(tokens=(TOKEN,), poll_wait_seconds=10).start()
-    caller = Caller(server.root_url, TOKEN)
+    if prod:
+        with open(opts.token_file, encoding="utf-8") as handle:
+            token = json.load(handle)["access_token"]
+        api_url = opts.api_url.rstrip("/")
+        server = None
+        caller = Caller(api_url[:-3] if api_url.endswith("/v1") else api_url, token, mock=False)
+        presets = dict(caller.color_presets())
+        print("  API %s, %d color presets" % (api_url, len(presets)), flush=True)
+    else:
+        server = MockBridgeServer(tokens=(TOKEN,), poll_wait_seconds=10).start()
+        token, api_url = TOKEN, server.base_url
+        caller = Caller(server.root_url, TOKEN)
+        presets = {slug: name for slug, name, _, _ in COLOR_PRESETS}
+    slugs = [p[0] for p in COLOR_PRESETS]  # kodak-portra-400 first; the API has the same ones
+    assert all(s in presets for s in slugs[:3]), "color presets missing from %s: %s" % (api_url, sorted(presets))
     native = host.native
     env = {
-        "NOLGIA_TOKEN": TOKEN,
-        "NOLGIA_API_URL": server.base_url,
+        "NOLGIA_TOKEN": token,
+        "NOLGIA_API_URL": api_url,
         "NOLGIA_ASK_BEFORE_RUN": "0",
         "NOLGIA_CONFIG_DIR": native(os.path.join(work, "config")),
         "NOLGIA_IMPORT_DIR": native(os.path.join(work, "imports")),
@@ -479,8 +643,9 @@ def main():
             session = None
             while time.time() < end:
                 status, data = caller.http("GET", "/v1/bridge/sessions")
-                if status == 200 and data["sessions"]:
-                    session = data["sessions"][0]
+                ours = [s for s in (data["sessions"] if status == 200 else []) if s["instance_id"] == env["NOLGIA_INSTANCE_ID"]]
+                if ours:
+                    session = ours[0]
                     break
                 assert proc.poll() is None, "serve exited early:\n" + serve_log()[-3000:]
                 time.sleep(0.5)
@@ -491,9 +656,28 @@ def main():
             assert session["app_version"].startswith("21."), session["app_version"]
             assert session["document"] == {"name": project_name}, session["document"]
             assert session["allow_agent"] is True and session["machine_name"]
+            made["session"] = session
 
         if not checks.check("serve connects and registers a session", connects):
             raise SystemExit
+
+        mcp = None
+        if prod and opts.mcp_url:
+            def mcp_connects():
+                nonlocal mcp
+                client = Mcp(opts.mcp_url, token)
+                info_ = client.start()
+                assert "nolgia_app_status" in client.tools, client.tools
+                status_, _ = client.call("nolgia_app_status", {})
+                ours = [s for s in status_["connected"] if s["session_id"] == made["session"]["id"]]
+                assert ours, status_
+                assert ours[0]["app"] == "resolve" and ours[0]["app_name"] == "DaVinci Resolve Studio", ours[0]
+                assert ours[0]["commands"] == list(CAPABILITIES), ours[0]["commands"]
+                print("  MCP server %s %s; nolgia_app_status lists this Resolve" % (
+                    info_["serverInfo"]["name"], info_["serverInfo"]["version"]), flush=True)
+                mcp = client
+
+            checks.check("MCP: nolgia_app_status lists the session", mcp_connects)
 
         def info_empty():
             res = expect_ok(caller.command("info"))
@@ -503,8 +687,12 @@ def main():
             assert res["page"] in ("media", "cut", "edit", "fusion", "color", "fairlight", "deliver", "photo"), res
             assert res["render"]["presets"], res["render"]
             made["info"] = res
+            if mcp is not None:
+                out, _ = mcp.call("nolgia_app_info", {"app": "resolve", "session_id": made["session"]["id"]})
+                assert out["status"] == "succeeded", out
+                assert out["result"]["project"]["name"] == project_name, out["result"]
 
-        checks.check("info: empty project", info_empty)
+        checks.check("info: empty project" + (" (bridge and MCP)" if mcp else ""), info_empty)
 
         work_files = os.path.join(work, "fixtures")
         os.makedirs(work_files)
@@ -558,8 +746,12 @@ def main():
             assert value["clips"] == ["sunset-wall.png"], value
             assert value["pool"] and value["pm"] and value["version"].startswith("21."), value
             assert "hello from resolve" in res["stdout"], res
+            if mcp is not None:
+                out, _ = mcp.call("nolgia_app_run", {"app": "resolve", "code": "result = timeline.GetName()",
+                                                     "language": "python"})
+                assert out["status"] == "succeeded" and out["result"]["value"] == "NOLGIA timeline", out
 
-        checks.check("run: Resolve objects, return value, stdout", run_ok)
+        checks.check("run: Resolve objects, return value, stdout" + (" (bridge and MCP)" if mcp else ""), run_ok)
 
         def run_fails():
             cmd = caller.command("run", {"code": "x = 1\nraise ValueError('boom from the test')\n"})
@@ -585,8 +777,18 @@ def main():
             assert res["width"] == 640, res
             assert res["frame"] == 0 and res["timecode"] == made["timeline"]["start_timecode"], res
             made["preview"] = res
+            if mcp is not None:
+                out, parts = mcp.call("nolgia_app_preview", {"app": "resolve", "width": 480, "frame": 0})
+                assert out["status"] == "succeeded", out
+                caller.remember(out)
+                images = [p for p in parts if p.get("type") == "image"]
+                assert images and images[0]["mimeType"] == "image/png", parts
+                import base64
+                shown = base64.b64decode(images[0]["data"])
+                assert png_size(shown) == (480, out["result"]["height"]), png_size(shown)
+                print("  MCP preview: the agent got the %dx%d PNG inline" % png_size(shown), flush=True)
 
-        checks.check("preview: a frame, scaled, uploaded as PNG", preview)
+        checks.check("preview: a frame, scaled, uploaded as PNG" + (" (bridge and MCP)" if mcp else ""), preview)
 
         def preview_default_and_timecode():
             res = expect_ok(caller.command("preview", {"timecode": made["timeline"]["start_timecode"]}))
@@ -620,20 +822,37 @@ def main():
         checks.check("preview: smaller file when too big to show", preview_jpeg_when_too_big)
 
         def export_png():
-            res = expect_ok(caller.command("export", {"format": "png", "frames": "0", "filename": "still"}))
+            if mcp is not None:
+                out, _ = mcp.call("nolgia_app_export", {"app": "resolve", "format": "png", "frames": "0",
+                                                        "filename": "still"})
+                out = mcp.finish(out)
+                assert out["status"] == "succeeded", out
+                caller.remember(out)
+                res = out["result"]
+            else:
+                res = expect_ok(caller.command("export", {"format": "png", "frames": "0", "filename": "still"}))
             data = caller.asset_bytes(res["asset_id"])
             assert png_size(data) == (made["timeline"]["width"], made["timeline"]["height"]), png_size(data)
             assert res["filename"] == "still-0000.png", res
 
-        checks.check("export: png at the timeline's size", export_png)
+        checks.check("export: png at the timeline's size" + (" (MCP)" if mcp else ""), export_png)
 
         def export_mp4():
             before = helper(host, work, "inspect")
-            res = expect_ok(caller.command("export", {"format": "mp4", "frames": "0-23", "filename": "cut"}, 600))
+            if mcp is not None:
+                out, _ = mcp.call("nolgia_app_export", {"app": "resolve", "format": "mp4", "frames": MP4_FRAMES,
+                                                        "filename": "cut"})
+                out = mcp.finish(out)
+                assert out["status"] == "succeeded", out
+                caller.remember(out)
+                res = out["result"]
+            else:
+                res = expect_ok(caller.command("export", {"format": "mp4", "frames": MP4_FRAMES, "filename": "cut"}, 600))
             data = caller.asset_bytes(res["asset_id"])
             assert data[4:8] == b"ftyp", data[:16]
             assert b"avc1" in data[:65536] + data[-65536:], "not H.264"
-            assert res["filename"] == "cut.mp4" and res["frames"] == [0, 23], res
+            assert res["filename"] == "cut.mp4" and res["frames"] == [0, 47], res
+            made["mp4_bytes"] = len(data)
             made["mp4"] = res["asset_id"]
             after = helper(host, work, "inspect")
             assert after["jobs"] == before["jobs"], "render job left in the queue: %s" % after
@@ -642,7 +861,7 @@ def main():
             assert after["playhead"] == before["playhead"], (before["playhead"], after["playhead"])
             assert after["page"] == before["page"], "page not put back: %s, was %s" % (after["page"], before["page"])
 
-        checks.check("export: mp4 (H.264), Deliver settings put back", export_mp4)
+        checks.check("export: mp4 (H.264, 2 s), Deliver settings put back" + (" (MCP)" if mcp else ""), export_mp4)
 
         def import_video():
             res = expect_ok(caller.command("import_asset", {"asset_id": made["mp4"]}))
@@ -651,7 +870,7 @@ def main():
         checks.check("import_asset: the rendered video into the bin", import_video)
 
         def import_several_and_a_project():
-            project = "0d6c7a52-5f1e-4c55-9a52-0f6e4c3b2a10"
+            project = None if prod else "0d6c7a52-5f1e-4c55-9a52-0f6e4c3b2a10"
             with open(wav_path, "rb") as handle:
                 wav = handle.read()
             clip = caller.asset_bytes(made["mp4"])
@@ -660,6 +879,8 @@ def main():
             third = caller.seed_asset("room-tone.wav", "audio/wav", wav, project)
             res = expect_ok(caller.command("import_asset", {"asset_ids": [second, first], "bin": "Selects"}))
             assert res["asset_ids"] == [second, first] and res["imported"] == ["shot-2.png", "shot-1.mp4"], res
+            if prod:
+                return  # a NOLGIA project with assets is only seeded against the mock
             res = expect_ok(caller.command("import_asset", {"project_id": project, "bin": "Assembly",
                                                             "append": True}, 300))
             assert res["asset_ids"] == [first, second, third], res
@@ -669,17 +890,23 @@ def main():
             assert video == ["shot-1.mp4", "shot-2.png"], res["appended"]  # the MP4's own sound is on A too
             assert audio[-1] == "room-tone.wav", res["appended"]
 
-        checks.check("import_asset: asset_ids and project_id, in order", import_several_and_a_project)
+        checks.check("import_asset: asset_ids%s, in order" % ("" if prod else " and project_id"),
+                     import_several_and_a_project)
 
         def color_preset_lut():
-            slug, name = COLOR_PRESETS[0][0], COLOR_PRESETS[0][1]
+            slug = slugs[0]
+            name = presets[slug]
             res = expect_ok(caller.command("import_asset", {"color_preset": slug, "apply_to": "all"}))
             assert res["kind"] == "lut" and res["color_preset"] == slug, res
             assert res["lut"] == "NOLGIA/%s.cube" % name, res
             local = host.local(res["path"])
             assert os.path.isfile(local), local
             with open(local, "rb") as handle:
-                assert handle.read().startswith(('TITLE "Nolgia %s"' % name).encode()), "not the preset's cube"
+                cube = handle.read()
+            assert cube.startswith(('TITLE "Nolgia %s"' % name).encode()), "not the preset's cube: %r" % cube[:60]
+            size = next((l.split()[1] for l in cube[:400].decode("ascii", "replace").splitlines()
+                         if l.startswith("LUT_3D_SIZE")), "?")
+            print("  LUT %s: %d bytes, LUT_3D_SIZE %s" % (os.path.basename(local), len(cube), size), flush=True)
             look = helper(host, work, "inspect")
             names = [i["name"] for i in res["applied_to"]]
             assert "sunset-wall.png" in names and len(names) == len(look["video_items"]), (res, look)
@@ -694,13 +921,13 @@ def main():
             # Appending clips leaves Resolve's playhead at the end of the timeline: put it on the first clip.
             expect_ok(caller.command("run", {"code": "result = timeline.SetCurrentTimecode('%s')"
                                                      % made["timeline"]["start_timecode"]}))
-            res = expect_ok(caller.command("import_asset", {"color_preset": COLOR_PRESETS[1][0], "apply_to": "current"}))
+            res = expect_ok(caller.command("import_asset", {"color_preset": slugs[1], "apply_to": "current"}))
             assert len(res["applied_to"]) == 1, res
-            res = caller.command("import_asset", {"color_preset": COLOR_PRESETS[2][0], "apply_to": "selected"})
+            res = caller.command("import_asset", {"color_preset": slugs[2], "apply_to": "selected"})
             assert res["status"] == "failed" and "No clips are selected" in res["error"], res
             res = caller.command("import_asset", {"color_preset": "no-such-look"})
             assert res["status"] == "failed" and "no color preset named" in res["error"], res
-            res = caller.command("import_asset", {"color_preset": COLOR_PRESETS[0][0], "apply_to": "all", "node": 9})
+            res = caller.command("import_asset", {"color_preset": slugs[0], "apply_to": "all", "node": 9})
             assert res["status"] == "failed" and "node" in res["error"], res
 
         checks.check("import_asset: LUT targets and errors", lut_targets)
@@ -712,7 +939,10 @@ def main():
             assert res["kind"] == "lut" and res["lut"] == "NOLGIA/Library look.cube", res
             assert res["applied_to"], res
 
-        checks.check("import_asset: .cube from the library", lut_from_library)
+        if prod:
+            checks.skip("import_asset: .cube from the library", "NOLGIA's library does not take .cube uploads")
+        else:
+            checks.check("import_asset: .cube from the library", lut_from_library)
 
         def save_and_open():
             res = expect_ok(caller.command("save"))
@@ -746,7 +976,10 @@ def main():
             storage = [r for r in caller.state()["requests"] if r["path"].startswith("/storage/")]
             assert storage and not any(r["auth"] for r in storage), "bearer token sent to a signed URL"
 
-        checks.check("uploads never send the token to storage", storage_without_token)
+        if prod:
+            checks.skip("uploads never send the token to storage", "needs the mock's request log")
+        else:
+            checks.check("uploads never send the token to storage", storage_without_token)
 
         def cancel_running():
             cid = caller.enqueue("run", {"code": "import time\ntime.sleep(3)\nresult = 1"})
@@ -767,8 +1000,12 @@ def main():
             assert res["value"] == "bye", res
             code = proc.wait(timeout=60)
             assert code == 0, "serve exit code %s\n%s" % (code, serve_log()[-2000:])
-            deleted = [d["session_id"] for d in caller.state()["deleted_sessions"]]
-            assert sid in deleted, deleted
+            if prod:
+                live = [s["id"] for s in caller.http("GET", "/v1/bridge/sessions")[1]["sessions"]]
+                assert sid not in live, "the session is still listed as live"
+            else:
+                deleted = [d["session_id"] for d in caller.state()["deleted_sessions"]]
+                assert sid in deleted, deleted
 
         checks.check("switch off: session closed, clean exit", switch_off)
     except SystemExit:
@@ -779,11 +1016,12 @@ def main():
             proc.wait()
 
     def refuses_headless_ask():
-        beats = caller.state()["heartbeats"]
+        beats = caller.state()["heartbeats"] if not prod else None
         out = host.py([entry, "--serve"], dict(env, NOLGIA_ASK_BEFORE_RUN="1"), timeout=120)
         assert out.returncode == 3, "exit %s\n%s" % (out.returncode, out.stdout[-2000:])
         assert "Ask before running code is on" in out.stdout, out.stdout[-2000:]
-        assert caller.state()["heartbeats"] == beats, "it registered anyway"
+        if not prod:
+            assert caller.state()["heartbeats"] == beats, "it registered anyway"
 
     checks.check("serve with Ask before running code: refuses", refuses_headless_ask)
 
@@ -812,9 +1050,24 @@ def main():
         assert report["state"] == "connected" and report["email"] == "test@nolgia.ai", report
         assert report["after"] == {"token": "", "connected": False, "status": "Signed out."}, report
 
-    checks.check("sign in with the device flow, then sign out", device_sign_in)
+    if prod:
+        checks.skip("sign in with the device flow, then sign out", "needs the mock's automatic approval")
+    else:
+        checks.check("sign in with the device flow, then sign out", device_sign_in)
 
-    server.stop()
+    if server is not None:
+        server.stop()
+    elif not opts.keep_assets:
+        def delete_assets():
+            deleted = caller.delete_assets()
+            for asset_id, name, outcome in deleted:
+                print("  deleted %s (%s): %s" % (asset_id, name, outcome), flush=True)
+            bad = [d for d in deleted if not d[2].endswith("then GET 404")]
+            assert not bad, "not deleted: %s" % bad
+
+        checks.check("delete the %d assets this run made" % len({a for a, _ in caller.assets}), delete_assets)
+    else:
+        print("  kept %d assets in the library: %s" % (len(caller.assets), [a for a, _ in caller.assets]), flush=True)
     return cleanup_and_finish(host, checks, work, opts, started, project_name, state, luts)
 
 
@@ -842,7 +1095,8 @@ def cleanup_and_finish(host, checks, work, opts, started, project_name, state, l
 
 def finish(checks, work, opts, started):
     total = len(checks.passed) + len(checks.failed)
-    print("\n%d/%d checks passed in %.0f s" % (len(checks.passed), total, time.time() - started))
+    skipped = (", %d skipped" % len(checks.skipped)) if checks.skipped else ""
+    print("\n%d/%d checks passed%s in %.0f s" % (len(checks.passed), total, skipped, time.time() - started))
     if checks.failed:
         print("failed: " + ", ".join(checks.failed))
         print("logs kept in %s" % work)

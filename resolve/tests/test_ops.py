@@ -140,6 +140,16 @@ class Preview(Base):
         self.assertEqual(up["tags"], ["resolve"])
         self.assertFalse(os.path.exists(res["_still"]["folder"]), "temp files left behind")
 
+    def test_playhead_set_again_when_resolve_answers_true_without_moving(self):
+        self.tl.ignore_sets = 1
+        with mock.patch("time.sleep"):
+            res = self.do("preview", {"frame": 60, "width": 320})
+        self.assertEqual(res["frame"], 60)
+        sets = [c for c in fake.PyRemoteObject.calls if c[1] == "SetCurrentTimecode"]
+        self.assertEqual([c[2] for c in sets][:2], ["01:00:02:12", "01:00:02:12"], sets)
+        self.assertEqual(self.tl.playhead, self.tl.start, "playhead not put back")
+        shutil.rmtree(res["_still"]["folder"])
+
     def test_default_width_and_timecode(self):
         res = self.do("preview", {"timecode": "01:00:01:00"})
         self.assertEqual((res["width"], res["frame"]), (1280, 24))

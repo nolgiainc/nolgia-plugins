@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The download zip, the install scripts and the NOLGIA.py entry."""
 
+import contextlib
 import io
 import os
 import runpy
@@ -103,9 +104,12 @@ class Entry(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_without_resolve_it_explains(self):
-        with mock.patch.object(sys, "argv", ["NOLGIA.py"]), self.assertRaises(SystemExit) as ctx:
+        out = io.StringIO()
+        with mock.patch.object(sys, "argv", ["NOLGIA.py"]), contextlib.redirect_stdout(out), \
+                self.assertRaises(SystemExit) as ctx:
             runpy.run_path(self.script, run_name="__main__")
         self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("open this from DaVinci Resolve", out.getvalue())
 
     def test_in_resolve_it_opens_the_window_from_the_zip(self):
         # Resolve runs the script with resolve, fusion and bmd in its globals.

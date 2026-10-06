@@ -23,6 +23,11 @@ It needs External scripting set to Local (to start the script and make the
 project) and DaVinci Resolve open with its window.
 
     python3 resolve/tests/inapp_resolve.py
+    python3 resolve/tests/inapp_resolve.py --api prod --token-file ~/.config/nolgia/tokens.json
+
+With --api prod the window talks to the real NOLGIA API with your token
+(never printed); the run's assets are deleted afterwards unless
+--keep-assets. Only free operations.
 """
 
 import argparse
@@ -94,7 +99,13 @@ def main():
     parser.add_argument("--resolve-python", default=os.environ.get("RESOLVE_PYTHON", e2e.DEFAULTS[key][0]))
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--uninstall", action="store_true", help="remove the installed plugin afterwards")
+    parser.add_argument("--api", choices=("mock", "prod"), default="mock")
+    parser.add_argument("--api-url", default=e2e.PROD_API, help="for --api prod")
+    parser.add_argument("--token-file", default=os.path.expanduser("~/.config/nolgia/tokens.json"),
+                        help="JSON with access_token, for --api prod (never printed)")
+    parser.add_argument("--keep-assets", action="store_true", help="prod: leave the run's assets in the library")
     opts = parser.parse_args()
+    prod = opts.api == "prod"
     if e2e.WSL and opts.resolve_python[1:3] == ":\\":
         opts.resolve_python = subprocess.check_output(["wslpath", "-u", opts.resolve_python], text=True).strip()
     host = Host(opts.resolve_python, "")
@@ -144,12 +155,20 @@ def main():
     if not checks.check("throwaway project in the open Resolve", ready):
         return e2e.finish(checks, work, opts, started)
 
-    server = MockBridgeServer(tokens=(TOKEN,), poll_wait_seconds=10).start()
-    caller = Caller(server.root_url, TOKEN)
+    if prod:
+        with open(opts.token_file, encoding="utf-8") as handle:
+            token = json.load(handle)["access_token"]
+        api_url = opts.api_url.rstrip("/")
+        server = None
+        caller = Caller(api_url[:-3] if api_url.endswith("/v1") else api_url, token, mock=False)
+    else:
+        server = MockBridgeServer(tokens=(TOKEN,), poll_wait_seconds=10).start()
+        token, api_url = TOKEN, server.base_url
+        caller = Caller(server.root_url, TOKEN)
     config = os.path.join(work, "config")
     env = {
-        "NOLGIA_TOKEN": TOKEN,
-        "NOLGIA_API_URL": server.base_url,
+        "NOLGIA_TOKEN": token,
+        "NOLGIA_API_URL": api_url,
         "NOLGIA_CONFIG_DIR": host.native(config),
         "NOLGIA_IMPORT_DIR": host.native(os.path.join(work, "imports")),
         "NOLGIA_BRIDGE_AUTOCONNECT": "1",
@@ -200,8 +219,9 @@ def main():
             session = None
             while time.time() < end:
                 status, data = caller.http("GET", "/v1/bridge/sessions")
-                if status == 200 and data["sessions"]:
-                    session = data["sessions"][0]
+                ours = [s for s in (data["sessions"] if status == 200 else []) if s["instance_id"] == env["NOLGIA_INSTANCE_ID"]]
+                if ours:
+                    session = ours[0]
                     break
                 assert not os.path.exists(done), "the script ended early:\n%s\n%s" % (
                     open(done, encoding="utf-8").read(), window_log()[-2000:])
@@ -210,6 +230,22 @@ def main():
             assert session["app"] == "resolve" and session["document"] == {"name": project_name}, session
             log = window_log()
             assert "NOLGIA window open" in log, log[-2000:]
+            opened = next((l for l in log.splitlines() if "NOLGIA window open" in l), "")
+            print("  " + opened.split(" ", 2)[-1], flush=True)
+            if host.wsl or sys.platform.startswith("win"):
+                # Which Python the script runs on: the DLLs of Resolve's fuscript programs.
+                script = ["powershell.exe", "-NoProfile", "-Command",
+                          "Get-CimInstance Win32_Process -Filter \"Name='fuscript.exe'\" | ForEach-Object { "
+                          "$c = $_.CommandLine; $p = Get-Process -Id $_.ProcessId; "
+                          "$p.Modules | Where-Object { $_.ModuleName -like 'python3*.dll' } | "
+                          "ForEach-Object { \"$($_.FileName) <- $c\" } }"]
+                try:
+                    out = subprocess.run(script, capture_output=True, text=True, timeout=60).stdout
+                    for line in out.replace("\r", "").splitlines():
+                        if "run_nolgia_in_app" in line:
+                            print("  fuscript loaded " + line.split(" <- ")[0], flush=True)
+                except Exception as err:
+                    print("  (could not list fuscript's DLLs: %s)" % err, flush=True)
 
         if not checks.check("the NOLGIA window opens in Resolve and connects", window_opens_and_connects):
             raise SystemExit
@@ -240,10 +276,13 @@ def main():
         def lut_and_render():
             res = expect_ok(caller.command("import_asset", {"color_preset": COLOR_PRESETS[0][0], "apply_to": "all"}))
             assert res["applied_to"], res
-            res = expect_ok(caller.command("export", {"format": "mp4", "frames": "0-11"}, 600))
+            res = expect_ok(caller.command("export", {"format": "mp4", "frames": e2e.MP4_FRAMES}, 600))
             assert caller.asset_bytes(res["asset_id"])[4:8] == b"ftyp"
+            assert res["frames"] == [0, 47], res
+            res = expect_ok(caller.command("save"))
+            assert res["saved"] is True, res
 
-        checks.check("LUT and an MP4 render in the app", lut_and_render)
+        checks.check("LUT, a 2 s MP4 render and save in the app", lut_and_render)
 
         def approve_in_the_request_window():
             # Turn on Ask before running code, and have the request window's
@@ -284,8 +323,12 @@ def main():
                 ending = handle.read()
             print("  the in-app script: " + ending.replace("\n", " | "), flush=True)
             assert ending.startswith("ended"), ending
-            deleted = [d["session_id"] for d in caller.state()["deleted_sessions"]]
-            assert sid in deleted, deleted
+            if prod:
+                live = [s["id"] for s in caller.http("GET", "/v1/bridge/sessions")[1]["sessions"]]
+                assert sid not in live, "the session is still listed as live"
+            else:
+                deleted = [d["session_id"] for d in caller.state()["deleted_sessions"]]
+                assert sid in deleted, deleted
             assert "The NOLGIA window closed; switching off." in window_log()
 
         checks.check("closing the window switches off", close_from_code)
@@ -300,8 +343,17 @@ def main():
                 print("  could not close the NOLGIA window (%s); close it by hand" % err, flush=True)
         if proc.poll() is None:
             proc.kill()
-        server.stop()
+        if server is not None:
+            server.stop()
         print("  window log:\n    " + "\n    ".join(window_log().splitlines()[-25:]), flush=True)
+        if prod and not opts.keep_assets:
+            def delete_assets():
+                deleted = caller.delete_assets()
+                for asset_id, name, outcome in deleted:
+                    print("  deleted %s (%s): %s" % (asset_id, name, outcome), flush=True)
+                assert all(d[2].endswith("then GET 404") for d in deleted), deleted
+
+            checks.check("delete the %d assets this run made" % len({a for a, _ in caller.assets}), delete_assets)
 
     def cleanup():
         res = e2e.helper(host, work, "teardown", {"name": project_name, "back": state.get("previous")})
