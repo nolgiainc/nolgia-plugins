@@ -238,7 +238,27 @@ class Export(Base):
         self.assertEqual(uploads[0]["data"][4:8], b"ftyp")
         after = (dict(self.project.render_settings), dict(self.project.format_codec), list(self.project.render_presets))
         self.assertEqual(after, before, "render settings, format or presets not put back")
+        self.assertEqual(self.resolve.page, "edit", "the page rendering opened was not put back")
         self.assertEqual(self.project.jobs, {}, "render job left in the queue")
+
+    def test_mp4_puts_the_playhead_back(self):
+        self.tl.playhead = self.tl.start + 30
+        res = self.do("export", {"format": "mp4"})
+        finisher, _ = self.finisher()
+        finisher(command("export", {"format": "mp4"}), res)
+        self.assertEqual(self.tl.playhead, self.tl.start + 30)
+
+    def test_media_page_has_no_playhead(self):
+        self.resolve.page = "media"
+        res = self.do("preview", {"frame": 10})
+        self.assertEqual(self.resolve.page, "media", "page not put back")
+        self.assertEqual([c[2] for c in fake.PyRemoteObject.calls if c[1] == "OpenPage"], ["edit", "media"])
+        shutil.rmtree(res["_still"]["folder"])
+        self.tl.playhead = self.tl.start + 60
+        cube = Luts.cube(self)
+        out = self.do("import_asset", {"asset_id": "a", "apply_to": "current"}, cube)
+        self.assertEqual([i["name"] for i in out["applied_to"]], ["Shot 2"])
+        self.assertEqual(self.resolve.page, "media")
 
     def test_mp4_whole_timeline(self):
         res = self.do("export", {"format": "mp4"})
@@ -305,6 +325,11 @@ class SaveOpen(Base):
         self.assertEqual(self.resolve.pm.current.name, "Other")
         with self.assertRaisesRegex(CommandError, "no project named Nope"):
             self.do("open", {"project": "Nope"})
+
+    def test_open_right_after_resolve_starts(self):
+        self.resolve.pm.add("Other")
+        self.resolve.pm.folder_set = False  # no current folder yet: Resolve lists no projects
+        self.assertEqual(self.do("open", {"project": "Other"})["project"], "Other")
 
     def test_open_in_a_folder(self):
         self.resolve.pm.folders["Clients"] = []
@@ -387,8 +412,9 @@ class ImportMedia(Base):
         self.assertEqual([c.name for c in bin_.clips], ["c.mov", "a.png", "b.wav", "d.mov"])
         items = res["appended"]["items"]
         self.assertEqual([i["name"] for i in items], ["c.mov", "a.png", "b.wav", "d.mov"])
-        video = [i for i in items if i["track"] == "V1"]
-        self.assertEqual([i["start_frame"] for i in video], [96, 144, 264])
+        # Resolve 21.1.1 appends each clip after the timeline's last clip, whatever its track.
+        self.assertEqual([(i["start_frame"], i["end_frame"]) for i in items],
+                         [(96, 144), (144, 264), (264, 312), (312, 360)])
         self.assertEqual([i["track"] for i in items], ["V1", "V1", "A1", "V1"])
 
     def test_skipped_and_luts_in_a_list(self):
@@ -444,6 +470,7 @@ class Luts(Base):
         tl = self.tl
         tl.add(fake.TimelineItem("Top", tl.start, tl.start + 20, "video", 2))
         tl.playhead = tl.start + 5
+        tl.playhead_set = False  # as after Resolve starts: GetCurrentVideoItem answers None until the playhead is set
         res = self.do("import_asset", {"asset_id": "a", "apply_to": "current"}, self.cube())
         self.assertEqual([i["name"] for i in res["applied_to"]], ["Top"])
         self.assertEqual(res["node"], 1)

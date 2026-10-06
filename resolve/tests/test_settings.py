@@ -95,8 +95,18 @@ class Paths(unittest.TestCase):
         self.assertTrue(paths.config_dir("win32", env).endswith(os.path.join("NOLGIA", "resolve")))
         self.assertTrue(paths.config_dir("linux", {"XDG_CONFIG_HOME": "/x"}).startswith("/x"))
         self.assertEqual(paths.config_dir("linux", {"NOLGIA_CONFIG_DIR": "/c"}), "/c")
-        self.assertTrue(paths.lut_dir("win32", env).endswith(os.path.join("DaVinci Resolve", "Support", "LUT")))
-        self.assertEqual(paths.lut_dir("darwin", {"NOLGIA_LUT_DIR": "/l"}), "/l")
+        win = dict(env, PROGRAMDATA=r"C:\ProgramData")
+        self.assertEqual(paths.lut_dirs("win32", win),
+                         [os.path.join(r"C:\ProgramData", "Blackmagic Design", "DaVinci Resolve", "Support", "LUT")])
+        mac = paths.lut_dirs("darwin", {})
+        self.assertEqual(mac[0], "/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT")
+        self.assertTrue(mac[1].endswith(os.path.join("Library", "Application Support", "Blackmagic Design",
+                                                     "DaVinci Resolve", "LUT")))
+        linux = paths.lut_dirs("linux", {})
+        self.assertEqual(linux[:2], ["/opt/resolve/LUT", "/home/resolve/LUT"])
+        self.assertTrue(linux[2].endswith(os.path.join(".local", "share", "DaVinciResolve", "LUT")))
+        self.assertEqual(paths.lut_dirs("darwin", {"NOLGIA_LUT_DIR": "/l", "BMD_RESOLVE_LUT_DIR": "/b"})[:2], ["/l", "/b"])
+        self.assertEqual(paths.lut_dir("linux", {"BMD_RESOLVE_LUT_DIR": "/b"}), "/b")
         self.assertEqual(paths.import_dir({"NOLGIA_IMPORT_DIR": "/i"}), "/i")
         self.assertTrue(paths.import_dir({}).endswith("NOLGIA imports"))
 

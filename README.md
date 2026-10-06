@@ -442,7 +442,7 @@ macOS (and Linux); see [Tested on](#tested-on) for where it has run.
 
 ### Install and use
 
-1. Get `nolgia-resolve-<version>.zip` from [nolgia.ai/plugins/resolve](https://nolgia.ai/plugins/resolve)
+1. Get `nolgia-resolve-<version>.zip` from [nolgia.ai/plugins/davinci-resolve](https://nolgia.ai/plugins/davinci-resolve)
    (or the [releases](https://github.com/nolgiainc/nolgia-plugins/releases) here)
    and unzip it.
 2. Quit DaVinci Resolve and run the installer: on Windows double-click

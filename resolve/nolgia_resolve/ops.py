@@ -10,6 +10,7 @@ waiting for a render, uploading, see `Finisher`). A result that carries
 `_still`, `_render` or `_upload` is finished there.
 """
 
+import contextlib
 import glob
 import hashlib
 import os
@@ -36,6 +37,9 @@ RAW_STILL_EXTENSIONS = (".bmp", ".ppm")
 MAX_LIST = 200
 RENDER_DONE = ("Complete", "Failed", "Cancelled", "Background Render Cancelled", "Remote Render Cancelled")
 MEDIA_KINDS = ("image", "video", "audio")
+# Pages where Resolve 21.1.1 has no timeline playhead for scripts
+# (GetCurrentTimecode answers None, SetCurrentTimecode fails).
+NO_PLAYHEAD_PAGES = ("media", "fusion")
 
 
 def call(obj, method, *args, default=None):
@@ -256,7 +260,7 @@ class Ops:
             if len(selected) >= MAX_LIST:
                 break
             selected.append(self.item_info(item, facts))
-        current_item = call(tl, "GetCurrentVideoItem")
+        current_item = self.current_item(tl) if facts["duration"] else None
         return {
             "name": call(tl, "GetName"),
             "fps": facts["fps"],
@@ -344,8 +348,24 @@ class Ops:
 
     # -------------------------------------------------------- stills
 
+    @contextlib.contextmanager
+    def playhead_page(self):
+        """On the Media and Fusion pages Resolve has no playhead for scripts:
+        go to the Edit page for the time it takes, then back."""
+        page = call(self.resolve, "GetCurrentPage")
+        moved = page in NO_PLAYHEAD_PAGES and bool(call(self.resolve, "OpenPage", "edit", default=False))
+        try:
+            yield
+        finally:
+            if moved:
+                call(self.resolve, "OpenPage", page)
+
     def _at_frame(self, project, tl, offset, action):
         """Move the playhead to `offset`, run action(), put it back."""
+        with self.playhead_page():
+            return self._at_frame_here(project, tl, offset, action)
+
+    def _at_frame_here(self, project, tl, offset, action):
         facts = self.timeline_facts(tl)
         before_tl = call(project, "GetCurrentTimeline")
         switched = before_tl is None or call(before_tl, "GetUniqueId") != call(tl, "GetUniqueId")
@@ -468,7 +488,10 @@ class Ops:
         if call(project, "IsRenderingInProgress", default=False):
             raise CommandError("DaVinci Resolve is already rendering. Try again when that render is done.")
         restore = {
+            "page": call(self.resolve, "GetCurrentPage"),  # rendering opens the Deliver page
             "timeline": call(project, "GetCurrentTimeline"),
+            "render_timeline": tl,
+            "timecode": call(tl, "GetCurrentTimecode"),  # and moves the playhead
             "format": call(project, "GetCurrentRenderFormatAndCodec", default={}) or {},
             "mode": call(project, "GetCurrentRenderMode"),
             "preset": None,
@@ -583,8 +606,13 @@ class Ops:
             call(project, "SetCurrentRenderFormatAndCodec", fmt["format"], fmt["codec"])
         if restore.get("mode") is not None:
             call(project, "SetCurrentRenderMode", restore["mode"])
+        rendered = restore.get("render_timeline")
+        if rendered is not None and restore.get("timecode") and call(rendered, "GetCurrentTimecode") != restore["timecode"]:
+            call(rendered, "SetCurrentTimecode", restore["timecode"])
         if restore.get("timeline") is not None:
             call(project, "SetCurrentTimeline", restore["timeline"])
+        if restore.get("page") and call(self.resolve, "GetCurrentPage") != restore["page"]:
+            call(self.resolve, "OpenPage", restore["page"])
 
     # ------------------------------------------------------------ save, open
 
@@ -625,6 +653,10 @@ class Ops:
             for part in [p for p in folder.replace("\\", "/").split("/") if p]:
                 if not call(pm, "OpenFolder", part, default=False):
                     raise CommandError("There is no project folder %s." % folder)
+        elif call(pm, "GetCurrentFolder") is None:
+            # Right after Resolve starts, its project manager has no current
+            # folder (and lists no projects) until a script picks one.
+            call(pm, "GotoRootFolder")
         current = call(call(pm, "GetCurrentProject"), "GetName")
         if current == name:
             return {"project": name, "already_open": True}
@@ -705,9 +737,11 @@ class Ops:
         before = call(pool, "GetCurrentFolder")
         try:
             call(pool, "SetCurrentFolder", folder)
-            found = call(pool, "ImportMedia", [{"FilePath": path}], default=[]) or []
+            # Resolve 21.1.1 imports with a list of paths and returns None for
+            # the [{"FilePath": ...}] form its README calls the new one.
+            found = call(pool, "ImportMedia", [path], default=[]) or []
             if not found:
-                found = call(pool, "ImportMedia", [path], default=[]) or []
+                found = call(pool, "ImportMedia", [{"FilePath": path}], default=[]) or []
         finally:
             if before is not None:
                 call(pool, "SetCurrentFolder", before)
@@ -745,10 +779,27 @@ class Ops:
 
     # ------------------------------------------------------------------ LUTs
 
+    def lut_folder(self):
+        """The NOLGIA folder in the first LUT folder Resolve reads that can
+        be written to."""
+        tried = []
+        for base in paths.lut_dirs():
+            folder = os.path.join(base, LUT_SUBFOLDER)
+            try:
+                os.makedirs(folder, exist_ok=True)
+                probe = os.path.join(folder, ".nolgia-write-test")
+                with open(probe, "wb"):
+                    pass
+                os.remove(probe)
+                return folder
+            except OSError as err:
+                tried.append("%s (%s)" % (base, err.strerror or err))
+        raise CommandError("Could not write to DaVinci Resolve's LUT folder: %s. Set NOLGIA_LUT_DIR to a LUT "
+                           "folder Resolve reads." % "; ".join(tried))
+
     def install_lut(self, args, prepared):
         project = self.project()
-        folder = os.path.join(paths.lut_dir(), LUT_SUBFOLDER)
-        os.makedirs(folder, exist_ok=True)
+        folder = self.lut_folder()
         target = os.path.join(folder, prepared["filename"])
         with open(prepared["path"], "rb") as handle:
             data = handle.read()
@@ -789,6 +840,16 @@ class Ops:
             self.changed = True
         return result
 
+    def current_item(self, tl):
+        item = call(tl, "GetCurrentVideoItem")
+        if item is None:
+            # Resolve 21.1.1 answers None until the playhead has been set from
+            # a script: set it where it already is, then ask again.
+            here = call(tl, "GetCurrentTimecode")
+            if here and call(tl, "SetCurrentTimecode", here):
+                item = call(tl, "GetCurrentVideoItem")
+        return item
+
     def lut_targets(self, tl, which):
         if which == "selected":
             items = [i for i in call(tl, "GetSelectedClips", default=[]) or [] if _is_video(i)]
@@ -797,10 +858,12 @@ class Ops:
                                    "apply_to: \"current\" or \"all\".")
             return items
         if which in ("current", "current_track"):
-            item = call(tl, "GetCurrentVideoItem")
+            item = self.current_item(tl)
             if item is None:
-                raise CommandError("There is no video clip under the playhead in the timeline %s."
-                                   % call(tl, "GetName"))
+                raise CommandError("There is no video clip under the playhead (at %s, on the %s page) in the "
+                                   "timeline %s." % (call(tl, "GetCurrentTimecode") or "an unknown time",
+                                                     call(self.resolve, "GetCurrentPage") or "current",
+                                                     call(tl, "GetName")))
             if which == "current":
                 return [item]
             kind_index = call(item, "GetTrackTypeAndIndex", default=[]) or []
@@ -814,6 +877,10 @@ class Ops:
         return items
 
     def apply_lut(self, project, absolute, relative, which, node):
+        with self.playhead_page():
+            return self._apply_lut(project, absolute, relative, which, node)
+
+    def _apply_lut(self, project, absolute, relative, which, node):
         tl = self.timeline(project)
         facts = self.timeline_facts(tl)
         applied, failed = [], []

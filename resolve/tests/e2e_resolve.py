@@ -41,6 +41,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import wave
 import zipfile
@@ -107,6 +108,7 @@ else:
         out["jobs"] = len(project.GetRenderJobList() or [])
         out["format"] = project.GetCurrentRenderFormatAndCodec()
         out["playhead"] = tl.GetCurrentTimecode() if tl else None
+        out["page"] = resolve.GetCurrentPage()
         items = []
         if tl:
             for i in range(1, tl.GetTrackCount("video") + 1):
@@ -325,7 +327,7 @@ class Caller:
         return data
 
     def seed_asset(self, filename, content_type, data, project_id=None):
-        url = "/mock/assets?filename=%s&content_type=%s" % (filename, content_type)
+        url = "/mock/assets?" + urllib.parse.urlencode({"filename": filename, "content_type": content_type})
         if project_id:
             url += "&project_id=" + project_id
         status, asset = self.http("POST", url, data, auth=False)
@@ -368,12 +370,17 @@ def scratch_root(host):
 
 
 def lut_dir(host):
-    if host.wsl or sys.platform.startswith("win"):
-        appdata = host.windows_env("APPDATA") if host.wsl else os.environ["APPDATA"]
-        return os.path.join(host.local(appdata), "Blackmagic Design", "DaVinci Resolve", "Support", "LUT")
-    if sys.platform == "darwin":
-        return os.path.expanduser("~/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT")
-    return os.path.expanduser("~/.local/share/DaVinciResolve/LUT")
+    """Where the plugin installs LUTs on this system (the first LUT folder of
+    nolgia_resolve.paths.lut_dirs() that can be written to)."""
+    from nolgia_resolve import paths
+
+    if host.wsl:
+        env = {"PROGRAMDATA": host.windows_env("PROGRAMDATA")}
+        return host.local(paths.lut_dirs("win32", env)[0].replace("/", "\\"))
+    for folder in paths.lut_dirs():
+        if os.access(folder, os.W_OK) or not os.path.exists(folder):
+            return folder
+    return paths.lut_dir()
 
 
 def main():
@@ -590,16 +597,25 @@ def main():
         checks.check("preview: default width, timecode, range check", preview_default_and_timecode)
 
         def preview_jpeg_when_too_big():
+            # Lower the inline limit just under the full-size PNG: the plugin
+            # must then send something smaller (Resolve's JPEG at this size,
+            # or a PNG with fewer colour levels) at the same size.
+            width = made["timeline"]["width"]
+            full = expect_ok(caller.command("preview", {"width": width}))
+            png = caller.asset_bytes(full["asset_id"])
+            assert full["mime_type"] == "image/png", full
+            limit = len(png) - 1
             code = "import os\nos.environ['NOLGIA_PREVIEW_MAX_BYTES'] = '%s'"
-            expect_ok(caller.command("run", {"code": code % "20000"}))
+            expect_ok(caller.command("run", {"code": code % limit}))
             try:
-                res = expect_ok(caller.command("preview", {"width": made["timeline"]["width"]}))
+                res = expect_ok(caller.command("preview", {"width": width}))
             finally:
                 expect_ok(caller.command("run", {"code": code % ""}))
             data = caller.asset_bytes(res["asset_id"])
-            assert len(data) <= 20000 or res["mime_type"] == "image/png", (len(data), res)
-            assert res["mime_type"] in ("image/jpeg", "image/png"), res
-            made["big_preview"] = res["mime_type"]
+            assert len(data) <= limit, (len(data), limit, res)
+            assert (res["width"], res["height"]) == (full["width"], full["height"]), res
+            made["big_preview"] = "%s, %d bytes (the PNG was %d)" % (res["mime_type"], len(data), len(png))
+            print("  smaller preview: " + made["big_preview"], flush=True)
 
         checks.check("preview: smaller file when too big to show", preview_jpeg_when_too_big)
 
@@ -624,6 +640,7 @@ def main():
             assert after["presets"] == before["presets"], "render presets changed: %s" % after["presets"]
             assert after["format"] == before["format"], "render format not put back: %s" % after["format"]
             assert after["playhead"] == before["playhead"], (before["playhead"], after["playhead"])
+            assert after["page"] == before["page"], "page not put back: %s, was %s" % (after["page"], before["page"])
 
         checks.check("export: mp4 (H.264), Deliver settings put back", export_mp4)
 
@@ -663,15 +680,20 @@ def main():
             assert os.path.isfile(local), local
             with open(local, "rb") as handle:
                 assert handle.read().startswith(('TITLE "Nolgia %s"' % name).encode()), "not the preset's cube"
-            assert [i["name"] for i in res["applied_to"]] == ["sunset-wall.png"], res
             look = helper(host, work, "inspect")
+            names = [i["name"] for i in res["applied_to"]]
+            assert "sunset-wall.png" in names and len(names) == len(look["video_items"]), (res, look)
             luts = [i["lut"] for i in look["video_items"]]
-            assert luts and all(l and "NOLGIA" in l for l in luts), look
+            assert luts and all(l and "NOLGIA" in l and name in l for l in luts), look
+            print("  Resolve reports the LUT as %r" % luts[0], flush=True)
             made["lut"] = res
 
         checks.check("import_asset: color preset LUT, applied with SetLUT", color_preset_lut)
 
         def lut_targets():
+            # Appending clips leaves Resolve's playhead at the end of the timeline: put it on the first clip.
+            expect_ok(caller.command("run", {"code": "result = timeline.SetCurrentTimecode('%s')"
+                                                     % made["timeline"]["start_timecode"]}))
             res = expect_ok(caller.command("import_asset", {"color_preset": COLOR_PRESETS[1][0], "apply_to": "current"}))
             assert len(res["applied_to"]) == 1, res
             res = caller.command("import_asset", {"color_preset": COLOR_PRESETS[2][0], "apply_to": "selected"})

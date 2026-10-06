@@ -28,4 +28,4 @@ Your sign in and settings are kept in %APPDATA%\NOLGIA\resolve (macOS:
 ~/Library/Application Support/NOLGIA/resolve, Linux: ~/.config/nolgia/resolve);
 delete that folder too to forget them.
 
-More: https://nolgia.ai/plugins/resolve
+More: https://nolgia.ai/plugins/davinci-resolve

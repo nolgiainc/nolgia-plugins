@@ -120,6 +120,7 @@ class Timeline(PyRemoteObject):
         self.track_names = {}
         self.selected = []
         self.playhead = self.start
+        self.playhead_set = True
         self.uid = uid or "tl-" + name
         self.markers = {}
 
@@ -132,10 +133,10 @@ class Timeline(PyRemoteObject):
         return item
 
     def append_clip(self, clip):
-        # Resolve appends to the end of the first track of the clip's kind.
+        # Resolve 21.1.1 appends at the end of the timeline (after every
+        # track's last clip), on track 1 of the clip's kind.
         kind = "audio" if clip.kind == "audio" else "video"
-        track = self.tracks[kind][0] if self.tracks[kind] else []
-        end = max([i.end for i in track] or [self.start])
+        end = self.GetEndFrame()
         item = TimelineItem(clip.name, end, end + clip.frames, kind, 1, clip)
         return self.add(item)
 
@@ -160,15 +161,24 @@ class Timeline(PyRemoteObject):
     def GetStartTimecode(self):
         return self.start_tc
 
+    def _no_playhead(self):
+        app = getattr(self, "resolve_app", None)
+        return app is not None and app.page in ("media", "fusion")
+
     def GetCurrentTimecode(self):
+        if self._no_playhead():
+            return None
         return timecode.from_frames(self.playhead, self.fps)
 
     def SetCurrentTimecode(self, text):
         self._log("SetCurrentTimecode", text)
+        if self._no_playhead():
+            return False
         try:
             self.playhead = timecode.to_frames(text, self.fps)
         except ValueError:
             return False
+        self.playhead_set = True
         return True
 
     def GetTrackCount(self, kind):
@@ -191,6 +201,8 @@ class Timeline(PyRemoteObject):
         return list(self.selected)
 
     def GetCurrentVideoItem(self):
+        if not self.playhead_set or self._no_playhead():
+            return None  # Resolve 21.1.1 until a script sets the playhead
         for track in reversed(self.tracks["video"]):
             for item in track:
                 if item.start <= self.playhead < item.end:
@@ -225,8 +237,10 @@ class MediaPool(PyRemoteObject):
     def ImportMedia(self, infos):
         self._log("ImportMedia", infos)
         out = []
+        if any(isinstance(info, dict) for info in infos):
+            return None  # what Resolve 21.1.1 does with [{"FilePath": ...}]
         for info in infos:
-            path = info["FilePath"] if isinstance(info, dict) else info
+            path = info
             if not os.path.isfile(path):
                 continue
             if any(c.path == path for c in self.current.clips):
@@ -378,6 +392,9 @@ class Project(PyRemoteObject):
         return [{"JobId": j} for j in self.job_order if j in self.jobs]
 
     def StartRendering(self, jobs, interactive=False):
+        self.manager.resolve_app.page = "deliver"  # as Resolve 21.1.1 does
+        if self.current is not None:
+            self.current.playhead = self.current.start  # and the playhead was seen to move
         for job in jobs:
             if job not in self.jobs:
                 return False
@@ -457,6 +474,7 @@ class ProjectManager(PyRemoteObject):
         self.current = None
         self.saves = 0
         self.folder = ""
+        self.folder_set = True
 
     def add(self, name, folder=""):
         project = Project(name, self)
@@ -482,13 +500,16 @@ class ProjectManager(PyRemoteObject):
         return self.current
 
     def GetProjectListInCurrentFolder(self):
-        return list(self.folders.get(self.folder, []))
+        return list(self.folders.get(self.folder, [])) if self.folder_set else []
 
     def GetCurrentFolder(self):
+        if not self.folder_set:
+            return None  # Resolve 21.1.1 right after it starts
         return self.folder.split("/")[-1] if self.folder else ""
 
     def GotoRootFolder(self):
         self.folder = ""
+        self.folder_set = True
         return True
 
     def OpenFolder(self, name):
@@ -505,6 +526,7 @@ class ProjectManager(PyRemoteObject):
 class Resolve(PyRemoteObject):
     def __init__(self):
         self.pm = ProjectManager()
+        self.pm.resolve_app = self
         self.page = "edit"
         self.alive = True
 
@@ -523,6 +545,11 @@ class Resolve(PyRemoteObject):
     def GetCurrentPage(self):
         return self.page
 
+    def OpenPage(self, name):
+        self._log("OpenPage", name)
+        self.page = name
+        return True
+
     def Fusion(self):
         return None
 
@@ -533,6 +560,7 @@ def sample(clips=2):
     project = resolve.pm.add("Rooftop Story")
     resolve.pm.current = project
     tl = Timeline("Edit 1")
+    tl.resolve_app = resolve
     project.timelines.append(tl)
     project.current = tl
     for n in range(clips):
