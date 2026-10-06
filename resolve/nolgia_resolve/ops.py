@@ -902,7 +902,7 @@ def _cube_title(data):
         line = line.strip()
         if line.upper().startswith("TITLE"):
             title = line[5:].strip().strip('"').strip()
-            if title.lower().startswith("nolgia "):
+            if title.upper().startswith("NOLGIA "):  # the API titles its cubes "Nolgia <name>"
                 title = title[7:]
             return title or None
     return None

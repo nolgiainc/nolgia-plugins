@@ -22,6 +22,7 @@ One folder per app. Each folder has its own license.
 | [`adobe/`](adobe/) | After Effects 2025, Premiere Pro 2025 and Illustrator 2025, and newer | GPL-3.0-or-later ([`adobe/LICENSE`](adobe/LICENSE)); IBM Plex Sans under the SIL Open Font License ([`adobe/fonts/OFL.txt`](adobe/fonts/OFL.txt)) |
 | [`presets/`](presets/) | The Film assistant workflows for each app, and the rules each app's workflows share | GPL-3.0-or-later |
 | [`photoshop/`](photoshop/) | Photoshop 2024 (25.0) and newer | GPL-3.0-or-later ([`photoshop/LICENSE`](photoshop/LICENSE)) |
+| [`resolve/`](resolve/) | DaVinci Resolve Studio 21.1 and newer | GPL-3.0-or-later ([`resolve/LICENSE`](resolve/LICENSE)) |
 | [`tools/`](tools/) | Test tools shared by the plugins | GPL-3.0-or-later |
 
 ## NOLGIA for Blender
@@ -431,3 +432,173 @@ use. Delete it when you are done.
 The plugin writes what it does to Photoshop's UXP log
 (`%APPDATA%\Adobe\Adobe Photoshop <year>\Logs\UXPLogs_*.log` on Windows),
 each line starting with `NOLGIA:`.
+
+## NOLGIA for DaVinci Resolve
+
+A script plugin for DaVinci Resolve Studio 21.1 and newer (since 21.1 Resolve
+runs Python scripts only in the Studio edition). It runs in Resolve's own
+Python, so there is nothing else to install. Tested on Windows with Resolve
+Studio 21.1.1; the macOS and Linux folders below follow Resolve's scripting
+README but have not been tried yet.
+
+### Install and use
+
+1. Get `nolgia-resolve-<version>.zip` from [nolgia.ai/plugins/resolve](https://nolgia.ai/plugins/resolve)
+   (or the [releases](https://github.com/nolgiainc/nolgia-plugins/releases) here)
+   and unzip it.
+2. Quit DaVinci Resolve and run the installer for your system:
+   `install-windows.cmd`, `install-macos.command` or `install-linux.sh`. It
+   copies `NOLGIA.py` and `nolgia_resolve.zip` from the `Utility` folder into
+   Resolve's Scripts folder for your user, so it needs no administrator
+   rights. To do it by hand, copy those two files into:
+   - Windows: `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility`
+   - macOS: `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility`
+   - Linux: `~/.local/share/DaVinciResolve/Fusion/Scripts/Utility`
+3. Start Resolve and open Workspace > Scripts > NOLGIA. The NOLGIA window
+   opens.
+4. Click Sign in. Your browser opens a NOLGIA page; check that the code
+   matches the one in the NOLGIA window and approve it.
+5. Keep the NOLGIA window open with Connected on, and ask your agent to work
+   in Resolve. Each command shows up in the Activity list. Click Pause, turn
+   Connected off or close the window to stop at any time.
+
+NOLGIA works in Resolve only while its window is open: closing it switches
+NOLGIA off. When you open it again it reconnects by itself if you left
+Connected on. To remove the plugin, delete the two files.
+
+Settings in the NOLGIA window:
+
+- **Connected**: NOLGIA can send commands to this Resolve only while this is on.
+- **Allow NOLGIA Agent**: also let your NOLGIA Agent in the cloud work here, not
+  only the agent apps you run yourself.
+- **Ask before running code**: show every piece of Python NOLGIA wants to run
+  in a NOLGIA request window and wait for you to click Run code or Deny.
+  Closing that window leaves the request waiting (Show request brings it back).
+- **Sign out**: disconnect and forget the sign in on this computer.
+
+The sign in and the switches are kept in
+`%APPDATA%\NOLGIA\resolve\settings.json` (macOS
+`~/Library/Application Support/NOLGIA/resolve`, Linux
+`~/.config/nolgia/resolve`), readable only by you, next to a log of what the
+plugin did (`nolgia.log`, never the token; Workspace > Console shows the same
+lines). A saved sign in is only ever sent to the API it came from.
+
+Python that NOLGIA runs in Resolve runs on your computer with your
+permissions, like any script. Turn on Ask before running code if you want to
+see it first.
+
+### What your agent can do
+
+Frames count from 0 at the start of the timeline (`info` gives the
+timeline's start timecode and frame, since Resolve's own API numbers frames
+from the start timecode: 01:00:00:00 at 24 fps is frame 86400).
+
+| Command | Arguments | Result |
+|---|---|---|
+| `info` | none | Resolve's version and edition, the current page, the open project (name, folder, database, size, frame rate), the current timeline (name, frame rate, size, start timecode and frame, length, current timecode and frame, video, audio and subtitle tracks with their clip counts, selected clips, the clip under the playhead, markers), the other timelines, the media pool's bins with clip counts, the render presets and render format, `current_timecode` |
+| `run` | `language: "python"`, `code`, `timeout_seconds?` | `{value, stdout, stderr}`; `value` is whatever the code puts in `result` (the code sees `resolve`, `project_manager`, `project`, `media_pool`, `timeline` (the current one, or None) and `fusion`). Resolve objects in `result` come back as their names. A failure returns the traceback. |
+| `preview` | `frame?` or `timecode?`, `timeline?` (or `camera`, the MCP tool's name for it), `width?` (16 to 1920) | a still of that frame of the timeline (default: the current frame of the current timeline), never wider than the timeline, uploaded: `{asset_id, width, height, mime_type, timeline, frame, timecode}`. A PNG; when the PNG would be too big for your agent to see inline (about 3.6 MB), Resolve's own JPEG of the frame when it has the size asked for, else a PNG with fewer colour levels. The playhead goes back where it was. |
+| `import_asset` | `asset_id` or `color_preset`, `append?`, `bin?`, `apply_to?`, `node?` | brings a NOLGIA asset in: images, video and audio into the `NOLGIA imports` bin (or `bin`), and with `append: true` onto the end of the current timeline (a new `NOLGIA timeline` when none is open): `{imported, kind, bin, path, appended?}`. A `.cube` LUT, or one of NOLGIA's color presets by its slug (`color_preset: "kodak-portra-400"`), is installed as a LUT (see below). |
+| `export` | `format` (`png`, `mp4`), `frames?` (`"24"` or `"0-119"`), `filename?`, `timeline?` | renders at the timeline's size and uploads it: `png` is one frame (default the current one), `mp4` is H.264 (with the timeline's audio) of the range or the whole timeline: `{asset_id, format, filename, frames, width, height, timeline}`. It renders into a temporary folder, never over your files, and puts the Deliver page's settings back afterwards. |
+| `save` | none | saves the open project: `{project, saved}` |
+| `open` | `project`, `folder?` (a project folder path such as `Clients/ACME`) | opens another project: `{project, folder}`. Resolve's scripting cannot tell whether the open project has unsaved changes, so with the NOLGIA window open it always asks you first. |
+
+**LUTs.** `import_asset` installs a LUT into the `NOLGIA` folder of
+Resolve's LUT folder for your user (Windows
+`%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\LUT\NOLGIA`, macOS
+`~/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/NOLGIA`,
+Linux `~/.local/share/DaVinciResolve/LUT/NOLGIA`), named after the preset or
+the file (`Kodak Portra 400.cube`), and refreshes Resolve's LUT list. A color
+preset replaces its own older copy; a LUT from your library never replaces
+another file. With `apply_to` it is also set on a node of the clips' grades
+(`node`, default 1, the first node): `"current"` is the video clip under the
+playhead, `"selected"` the clips selected in the timeline, `"current_track"`
+every clip on the video track of the clip under the playhead, and `"all"`
+every video clip in the timeline. The result is `{imported, kind: "lut",
+path, lut, color_preset?, applied_to?, not_applied?, node?}`; `lut` is the
+path Resolve lists it under (`NOLGIA/Kodak Portra 400.cube`).
+
+Imported media stays on disk where Resolve can find it:
+`Documents/NOLGIA imports/<project>/<asset id>/` (or `NOLGIA_IMPORT_DIR`).
+Resolve does not import 3D models.
+
+### Without the NOLGIA window (render machines, scripts, tests)
+
+With Resolve open (or started without its window, `Resolve -nogui`) and
+Preferences > System > General > External scripting using set to Local:
+
+```bat
+set NOLGIA_TOKEN=nol_...
+"C:\Program Files\Blackmagic Design\DaVinci Resolve\ResolvePython\ResolvePython.exe" "%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility\NOLGIA.py" --serve
+```
+
+```sh
+# macOS (on Linux ResolvePython is /opt/resolve/bin/ResolvePython)
+NOLGIA_TOKEN=nol_... "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Applications/ResolvePython" \
+  ~/"Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility/NOLGIA.py" --serve
+```
+
+It connects, runs commands
+until it is switched off (`nolgia_resolve.disconnect()` from `run` code,
+Ctrl+C) or Resolve closes, and exits with 0 after a normal stop and 3 when it
+could not connect or NOLGIA stopped accepting the sign in. Without a window
+nobody can approve code, so it refuses to connect while Ask before running
+code is on, and refuses `open` after NOLGIA changed the project since it was
+last saved.
+
+| Variable | Effect |
+|---|---|
+| `NOLGIA_TOKEN` | use this token instead of signing in (never saved) |
+| `NOLGIA_API_URL` | API to talk to (default `https://api.nolgia.ai/v1`) |
+| `NOLGIA_BRIDGE_AUTOCONNECT=1` | connect as soon as the NOLGIA window opens |
+| `NOLGIA_ASK_BEFORE_RUN=0/1` | set Ask before running code (for this run; not saved) |
+| `NOLGIA_ALLOW_AGENT=0/1` | set Allow NOLGIA Agent (for this run; not saved) |
+| `NOLGIA_INSTANCE_ID` | fixed session id for this Resolve |
+| `NOLGIA_CONFIG_DIR` | where the settings, sign in and log are kept |
+| `NOLGIA_IMPORT_DIR` | where imported media is kept |
+| `NOLGIA_LUT_DIR` | the LUT folder to install into (Resolve must read it) |
+| `NOLGIA_PREVIEW_MAX_BYTES` | the size above which previews are made smaller |
+
+### Known limits
+
+- Resolve's scripting cannot tell whether a project has unsaved changes, so
+  `info` says `unsaved_changes: null` (and whether NOLGIA changed it since it
+  was last saved), and `open` asks you first.
+- Commands run one at a time on the NOLGIA script's own thread, the only one
+  that calls Resolve. A long `run` holds the NOLGIA window until it ends; a
+  render does not (the plugin checks on it between clicks).
+- Resolve finds new scripts when it starts, so restart it after installing or
+  updating.
+
+### Development
+
+The plugin is standard library Python in
+[`resolve/nolgia_resolve/`](resolve/nolgia_resolve/). Its `core/` is a copy
+of [`blender/core/`](blender/core/), kept the same by
+[`resolve/tests/test_core_copy.py`](resolve/tests/test_core_copy.py), which
+lists the few places they may differ (the app's constants, the argument
+checks, the app's name in messages): copy a fix made in one to the other.
+The unit tests run with plain Python 3.10 or newer against stand-ins for
+Resolve and its UIManager and the mock API:
+
+```sh
+python3 -m unittest discover -s resolve/tests -p 'test_*.py'
+```
+
+The end-to-end test builds the download, starts Resolve without its window
+(or uses the open one with `--use-running`), makes a throwaway project, runs
+`NOLGIA.py --serve` under Resolve's own Python against the mock API, drives
+every command through it, then deletes the project and the LUTs it
+installed. It needs External scripting set to Local. From WSL it uses the
+Windows Resolve (paths through `wslpath`, variables through `WSLENV`):
+
+```sh
+python3 resolve/tests/e2e_resolve.py
+```
+
+Build the download (Python 3, standard library). Releases are tagged
+`resolve-v<version>` with the zip attached as `nolgia-resolve-<version>.zip`.
+
+```sh
+python3 resolve/build.py      # resolve/dist/nolgia-resolve-0.1.0.zip
+```
