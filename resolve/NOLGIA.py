@@ -21,11 +21,15 @@ PACKAGE = "nolgia_resolve"
 
 
 def _folders():
-    try:
-        yield os.path.dirname(os.path.abspath(__file__))
-    except NameError:
-        pass
-    # Resolve may run a menu script without __file__: look where it is installed.
+    here = globals().get("__file__")
+    if isinstance(here, str) and here:
+        yield os.path.dirname(os.path.abspath(here))
+    # Resolve runs menu scripts in its fuscript program without __file__,
+    # with the script's path in sys.argv[0].
+    argv = list(getattr(sys, "argv", None) or [])
+    if argv and isinstance(argv[0], str) and os.path.isfile(argv[0]):
+        yield os.path.dirname(os.path.abspath(argv[0]))
+    # Else look where the installer puts it.
     if sys.platform.startswith("win"):
         appdata = os.environ.get("APPDATA") or os.path.expanduser(os.path.join("~", "AppData", "Roaming"))
         programdata = os.environ.get("PROGRAMDATA") or "C:\\ProgramData"
@@ -57,6 +61,9 @@ def load():
 
 
 def main(scope):
+    if sys.version_info < (3, 8):
+        print("NOLGIA needs Python 3.8 or newer; DaVinci Resolve is using Python %s." % sys.version.split()[0])
+        return
     args = list(getattr(sys, "argv", None) or [])[1:]
     if "--serve" in args:
         sys.exit(0 if load().serve() else 3)

@@ -8,6 +8,7 @@ this Resolve. A UIManager timer calls Controller.tick() every 100 ms on the
 script's thread, which runs the commands, and redraws what changed.
 """
 
+import sys
 import time
 import traceback
 
@@ -18,7 +19,14 @@ from .runtime import Controller, env_flag
 WINDOW_ID = "com.nolgia.resolve.panel"
 REQUEST_ID = "com.nolgia.resolve.request"
 TIMER_ID = "NolgiaTick"
-TICK_MS = 100
+TICK_MS = 50
+# UIManager's RunLoop keeps Python's GIL most of the time, so NOLGIA's network
+# and upload threads run only while the script itself runs Python. Measured in
+# Resolve 21.1.1, a busy thread got about 21% of its speed with nothing given
+# back, 46% when each 50 ms tick slept 5 ms and 73% with 25 ms. So each tick
+# sleeps a little, and more while a command or a sign in is under way.
+YIELD_IDLE = 0.005
+YIELD_BUSY = 0.030
 MAX_CODE_CHARS = 200000
 FOOTER = "NOLGIA works in this DaVinci Resolve while this window is open and Connected is on."
 
@@ -120,9 +128,16 @@ class Panel:
 
     def _start_timer(self):
         self.timer = self.ui.Timer({"ID": TIMER_ID, "Interval": TICK_MS, "SingleShot": False})
-        handler = self._guard(self._on_tick)
-        # UIManager delivers a timer's Timeout to the dispatcher.
-        self.disp.On[TIMER_ID].Timeout = handler
+        tick = self._guard(self._on_tick)
+
+        def on_timeout(ev):
+            # Resolve 21.1.1 delivers every timer's Timeout to the dispatcher's
+            # own On.Timeout, naming the timer in ev["who"] (a handler set on
+            # On[<timer id>] is never called).
+            if _who(ev) in (TIMER_ID, None):
+                tick(ev)
+
+        self.disp.On.Timeout = on_timeout
         self.timer.Start()
 
     def _guard(self, fn):
@@ -140,7 +155,10 @@ class Panel:
         self._ticks += 1
         if self._ticks == 1:
             self.log("The NOLGIA window is running (timer ticks).")
-        self.controller.tick()
+        ctl = self.controller
+        ctl.tick()
+        busy = ctl.login is not None or (ctl.worker is not None and ctl.worker.busy_with is not None)
+        time.sleep(YIELD_BUSY if busy else YIELD_IDLE)  # let the network threads run
 
     def _on_connected(self, ev):
         if self.items["Connected"].Checked:
@@ -323,7 +341,8 @@ class Panel:
             ctl.settings.update(connected=False)
         self.refresh(force=True)
         self.win.Show()
-        self.log("NOLGIA window open (plugin %s, DaVinci Resolve %s)." % (_plugin_version(), ctl.ops.app_version()))
+        self.log("NOLGIA window open (plugin %s, DaVinci Resolve %s, Python %s at %s)."
+                 % (_plugin_version(), ctl.ops.app_version(), sys.version.split()[0], sys.executable))
         try:
             self.disp.RunLoop()
         finally:
@@ -336,6 +355,13 @@ class Panel:
                 pass
             self._close_request()
         return True
+
+
+def _who(ev):
+    try:
+        return ev["who"]
+    except Exception:
+        return None
 
 
 def _show(element, visible):

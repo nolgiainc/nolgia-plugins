@@ -43,51 +43,48 @@ from e2e_resolve import COLOR_PRESETS, Caller, Checks, Host, MockBridgeServer, e
 
 TOKEN = "inapp-token"
 
-# Started inside Resolve by RUN_IN_APP. Sets NOLGIA's variables for this run
-# only, runs the installed NOLGIA.py as the Scripts menu does, then puts
-# everything back.
+# Started by Resolve (Fusion's RunScript runs it in Resolve's fuscript
+# program, the way the Scripts menu runs a script: resolve, fusion, bmd and
+# app set, no __file__, the script's path in sys.argv[0]). Sets NOLGIA's
+# variables for this program only, runs the installed NOLGIA.py the same
+# way, and leaves a marker file when it ends.
 WRAPPER = r'''
-import os, sys
-_env = %(env)r
-_saved = {k: os.environ.get(k) for k in _env}
-os.environ.update(_env)
-_path = list(sys.path)
+import os, sys, threading, traceback
+os.environ.update(%(env)r)
+# Never leave the window on screen: end this program after 10 minutes.
+_guard = threading.Timer(600, lambda: os._exit(2))
+_guard.daemon = True
+_guard.start()
+_script = %(script)r
+_done = %(done)r
 try:
-    _script = %(script)r
+    sys.argv = [_script]
     with open(_script, encoding="utf-8") as _handle:
         _code = compile(_handle.read(), _script, "exec")
-    exec(_code, {"resolve": resolve, "fusion": fusion, "bmd": bmd, "__file__": _script, "__name__": "__main__"})
-finally:
-    for _k, _v in _saved.items():
-        if _v is None:
-            os.environ.pop(_k, None)
-        else:
-            os.environ[_k] = _v
-    sys.path[:] = _path
-    for _m in [m for m in list(sys.modules) if m.startswith("nolgia_resolve")]:
-        del sys.modules[_m]
+    exec(_code, {"resolve": resolve, "fusion": fusion, "fu": fusion, "bmd": bmd, "app": app, "__name__": "__main__"})
+    _outcome = "ended"
+except SystemExit as _exit:
+    _outcome = "exit %%s" %% (_exit.code,)
+except BaseException:
+    _outcome = traceback.format_exc()
+with open(_done, "w", encoding="utf-8") as _handle:
+    _handle.write("%%s\npython %%s\n%%s\n" %% (_outcome, sys.version.split()[0], sys.executable))
 '''
 
-# Runs in ResolvePython next to Resolve: asks Resolve to run the wrapper.
+# Runs in ResolvePython next to Resolve: where Resolve looks for scripts, and
+# asks it to run the wrapper (RunScript returns at once; the script runs on).
 RUN_IN_APP = r'''
-import json, sys, time
+import json, sys
 import DaVinciResolveScript as dvr
 resolve = dvr.scriptapp("Resolve")
 fusion = resolve.Fusion()
 out = {"paths": {}}
 for key in ("Scripts:", "Scripts:Utility/"):
-    try:
-        out["paths"][key] = fusion.MapPath(key)
-    except Exception as err:
-        out["paths"][key] = repr(err)
-try:
-    out["segments"] = fusion.MapPathSegments("Scripts:")
-except Exception as err:
-    out["segments"] = repr(err)
+    out["paths"][key] = fusion.MapPath(key)
+segments = fusion.MapPathSegments("Scripts:")
+out["segments"] = list(segments.values()) if isinstance(segments, dict) else segments
 print("INAPP_PATHS " + json.dumps(out, default=str), flush=True)
-t0 = time.time()
-value = fusion.RunScript(sys.argv[1])
-print("INAPP_DONE " + json.dumps({"value": value, "seconds": round(time.time() - t0, 1)}, default=str), flush=True)
+print("INAPP_STARTED " + json.dumps({"value": fusion.RunScript(sys.argv[1])}, default=str), flush=True)
 '''
 
 
@@ -160,8 +157,10 @@ def main():
         "NOLGIA_INSTANCE_ID": "inapp-" + stamp,
     }
     wrapper = os.path.join(work, "run_nolgia_in_app.py")
+    done = os.path.join(work, "in_app_done.txt")
     with open(wrapper, "w", encoding="utf-8") as handle:
-        handle.write(WRAPPER % {"env": env, "script": host.native(os.path.join(utility, "NOLGIA.py"))})
+        handle.write(WRAPPER % {"env": env, "script": host.native(os.path.join(utility, "NOLGIA.py")),
+                                "done": host.native(done)})
     runner = os.path.join(work, "run_in_app.py")
     with open(runner, "w", encoding="utf-8") as handle:
         handle.write(RUN_IN_APP)
@@ -189,8 +188,7 @@ def main():
             data = json.loads(line[len("INAPP_PATHS "):])
             made["paths"] = data
             print("  Resolve's Scripts path: %s" % data, flush=True)
-            folders = data["segments"] if isinstance(data["segments"], list) else []
-            folders += [v for v in data["paths"].values() if isinstance(v, str)]
+            folders = list(data["segments"] or []) + [v for v in data["paths"].values() if isinstance(v, str)]
             want = os.path.normcase(host.native(os.path.dirname(utility)).rstrip("\\/"))
             assert any(os.path.normcase(str(f)).rstrip("\\/").startswith(want) for f in folders), \
                 "the user Scripts folder is not in Resolve's Scripts path: %s" % folders
@@ -205,7 +203,8 @@ def main():
                 if status == 200 and data["sessions"]:
                     session = data["sessions"][0]
                     break
-                assert proc.poll() is None, "RunScript ended early:\n" + run_output()[-2000:] + window_log()[-2000:]
+                assert not os.path.exists(done), "the script ended early:\n%s\n%s" % (
+                    open(done, encoding="utf-8").read(), window_log()[-2000:])
                 time.sleep(0.5)
             assert session, "no session within 90 s:\n%s\n%s" % (run_output()[-2000:], window_log()[-2000:])
             assert session["app"] == "resolve" and session["document"] == {"name": project_name}, session
@@ -278,8 +277,13 @@ def main():
             sid = caller.http("GET", "/v1/bridge/sessions")[1]["sessions"][0]["id"]
             res = expect_ok(caller.command("run", {"code": "import nolgia_resolve\nresult = nolgia_resolve.close_window()"}))
             assert res["value"] is True, res
-            proc.wait(timeout=60)
-            assert "INAPP_DONE" in run_output(), run_output()[-2000:]
+            end = time.time() + 60
+            while time.time() < end and not os.path.exists(done):
+                time.sleep(0.5)
+            with open(done, encoding="utf-8") as handle:
+                ending = handle.read()
+            print("  the in-app script: " + ending.replace("\n", " | "), flush=True)
+            assert ending.startswith("ended"), ending
             deleted = [d["session_id"] for d in caller.state()["deleted_sessions"]]
             assert sid in deleted, deleted
             assert "The NOLGIA window closed; switching off." in window_log()
@@ -288,13 +292,14 @@ def main():
     except SystemExit:
         pass
     finally:
-        if proc.poll() is None:
-            # Leave nothing open on screen: close the window from outside.
+        if not os.path.exists(done):
+            # Leave nothing open on screen: close the window through the plugin.
             try:
                 caller.command("run", {"code": "import nolgia_resolve\nresult = nolgia_resolve.close_window()"}, 30)
-                proc.wait(timeout=30)
-            except Exception:
-                proc.kill()
+            except Exception as err:
+                print("  could not close the NOLGIA window (%s); close it by hand" % err, flush=True)
+        if proc.poll() is None:
+            proc.kill()
         server.stop()
         print("  window log:\n    " + "\n    ".join(window_log().splitlines()[-25:]), flush=True)
 

@@ -126,6 +126,21 @@ class Entry(unittest.TestCase):
         self.assertIn("nolgia_resolve.zip", opened[0][0])
         self.assertEqual(opened[0][1:], ("R", "F", "B"))
 
+    def test_as_resolve_runs_it_without_file(self):
+        # Resolve's fuscript runs a menu script with no __file__ and its path in sys.argv[0].
+        opened = []
+        sys.path.insert(0, os.path.join(self.tmp, "Utility", "nolgia_resolve.zip"))
+        import nolgia_resolve
+
+        with open(self.script, encoding="utf-8") as handle:
+            code = compile(handle.read(), "<NOLGIA>", "exec")
+        scope = {"resolve": "R", "fusion": "F", "bmd": "B", "__name__": "__main__"}
+        sys.path.remove(os.path.join(self.tmp, "Utility", "nolgia_resolve.zip"))
+        with mock.patch.object(sys, "argv", [self.script]), \
+                mock.patch.object(nolgia_resolve, "open_window", lambda *a: opened.append(a)):
+            exec(code, scope)
+        self.assertEqual(opened, [("R", "F", "B")])
+
     def test_serve_flag(self):
         sys.path.insert(0, os.path.join(self.tmp, "Utility", "nolgia_resolve.zip"))
         import nolgia_resolve

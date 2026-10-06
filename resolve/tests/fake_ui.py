@@ -17,16 +17,22 @@ KNOWN_PROPS = {
 
 
 class Handlers:
-    """win.On.X.Clicked = fn and win.On["X"].Clicked = fn."""
+    """win.On.X.Clicked = fn and win.On["X"].Clicked = fn; and, on the
+    dispatcher, On.Timeout = fn, where Resolve 21.1.1 delivers every timer's
+    Timeout (a handler set on On[<timer id>].Timeout is never called)."""
 
     def __init__(self):
         object.__setattr__(self, "_by_id", {})
+        object.__setattr__(self, "generic", {})
 
     def __getitem__(self, element_id):
         return self._by_id.setdefault(element_id, EventSlot())
 
     def __getattr__(self, element_id):
         return self[element_id]
+
+    def __setattr__(self, event, fn):
+        self.generic[event] = fn
 
 
 class EventSlot:
@@ -177,7 +183,9 @@ class Dispatcher:
         self.exited = True
 
     def tick(self, timer_id):
-        self.On[timer_id].events["Timeout"]({"who": timer_id})
+        timer = next(e for e in self.ui.timers if e.props.get("ID") == timer_id)
+        if timer.started:
+            self.On.generic["Timeout"]({"what": "Timeout", "who": timer_id})
 
 
 class Fusion:
