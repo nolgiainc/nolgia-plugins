@@ -290,9 +290,10 @@ def make_jpeg_stub(width, height, size=2000):
 
 
 class Project(PyRemoteObject):
-    def __init__(self, name, manager):
+    def __init__(self, name, manager, saved=True):
         self.name = name
         self.manager = manager
+        self.saved = saved  # in the project library; False for Resolve's own New Project / Untitled Project
         self.fps, self.width, self.height = 24, 1920, 1080
         self.timelines = []
         self.current = None
@@ -332,6 +333,13 @@ class Project(PyRemoteObject):
 
     def GetTimelineCount(self):
         return len(self.timelines)
+
+    def CreateEmptyTimeline(self, name):
+        tl = Timeline(name, self.fps, self.width, self.height)
+        tl.resolve_app = getattr(self.manager, "resolve_app", None)
+        self.timelines.append(tl)
+        self.current = tl
+        return tl
 
     def GetTimelineByIndex(self, index):
         return self.timelines[index - 1] if 1 <= index <= len(self.timelines) else None
@@ -450,6 +458,9 @@ class Project(PyRemoteObject):
         tl = self.current
         if tl is None or ext not in self.still_formats:
             return False
+        app = getattr(self.manager, "resolve_app", None)
+        if app is not None and not app.color_shown:
+            return False  # Resolve 21.1.1: no stills until the Color page has been shown once
         w, h = tl.width, tl.height
         shade = (tl.playhead - tl.start) % 256
         if ext == ".bmp":
@@ -475,9 +486,10 @@ class Project(PyRemoteObject):
 class ProjectManager(PyRemoteObject):
     def __init__(self):
         self.projects = {}
-        self.folders = {"": ["Untitled Project"]}
+        self.folders = {"": []}  # Resolve's own Untitled Project is not in the library
         self.current = None
         self.saves = 0
+        self.dialogs = 0  # times a modal dialog would have opened (the plugin must never cause one)
         self.folder = ""
         self.folder_set = True
 
@@ -495,14 +507,56 @@ class ProjectManager(PyRemoteObject):
     def SaveProject(self):
         if self.current is None:
             return False
+        if not self.current.saved:
+            self.dialogs += 1  # the real one opens the Save dialog and blocks
+            return False
         self.saves += 1
         return True
+
+    def _leaving_current(self):
+        # Loading over an unsaved project with content may make Resolve ask
+        # to save it (not seen, but the plugin never risks it).
+        if self.current is not None and not self.current.saved and (
+                self.current.timelines or self.current.pool.root.clips or self.current.pool.root.folders):
+            self.dialogs += 1
 
     def LoadProject(self, name):
         if name not in self.folders.get(self.folder, []):
             return None
+        self._leaving_current()
         self.current = self.projects.get(name) or self.add(name, self.folder)
         return self.current
+
+    def CreateProject(self, name, media_path=None):
+        if name in self.folders.get(self.folder, []):
+            return None
+        self._leaving_current()
+        self.current = self.add(name, self.folder)
+        return self.current
+
+    def CloseProject(self, project):
+        """A library project closes and Resolve shows an unsaved Untitled
+        Project. An unsaved project with content does not close (Resolve
+        21.1.1 answers False, renames it with a timestamp and puts an
+        "Untitled Project" into the library); an empty unsaved one closes."""
+        if project is not self.current:
+            return False
+        has_content = project.timelines or project.pool.root.clips or project.pool.root.folders
+        if not project.saved and has_content:
+            project.name += " 2026-10-06_150820"
+            self.folders[""].append("Untitled Project")
+            return False
+        self.current = Project("Untitled Project", self, saved=False)
+        return True
+
+    def GetProjectLastModifiedTime(self, name):
+        for names in self.folders.values():
+            if name in names:
+                return 1700000000
+        return None
+
+    def GetProjectAttributesInCurrentFolder(self):
+        return {name: {} for name in self.GetProjectListInCurrentFolder()}
 
     def GetProjectListInCurrentFolder(self):
         return list(self.folders.get(self.folder, [])) if self.folder_set else []
@@ -534,6 +588,7 @@ class Resolve(PyRemoteObject):
         self.pm.resolve_app = self
         self.page = "edit"
         self.alive = True
+        self.color_shown = False  # a fresh session: the Color page has not been shown yet
 
     def GetProjectManager(self):
         return self.pm if self.alive else None
@@ -548,11 +603,13 @@ class Resolve(PyRemoteObject):
         return True
 
     def GetCurrentPage(self):
-        return self.page
+        return self.page  # None while only the Project Manager is up
 
     def OpenPage(self, name):
         self._log("OpenPage", name)
         self.page = name
+        if name == "color":
+            self.color_shown = True
         return True
 
     def Fusion(self):

@@ -69,6 +69,7 @@ class Info(Base):
         self.assertEqual(res["page"], "edit")
         self.assertEqual(res["document"], {"name": "Rooftop Story"})
         self.assertEqual(res["project"]["name"], "Rooftop Story")
+        self.assertTrue(res["project"]["in_library"])
         self.assertIsNone(res["project"]["unsaved_changes"])
         self.assertIs(res["project"]["changed_by_nolgia_since_save"], False)
         tl = res["timeline"]
@@ -258,7 +259,25 @@ class Export(Base):
         finisher(command("export", {"format": "mp4"}), res)
         self.assertEqual(self.tl.playhead, self.tl.start + 30)
 
+    def test_fresh_session_shows_the_color_page_once(self):
+        # Resolve 21.1.1 exports no still until the Color page has been shown.
+        res = self.do("preview", {"frame": 10, "width": 320})
+        pages = [c[2] for c in fake.PyRemoteObject.calls if c[1] == "OpenPage"]
+        self.assertEqual(pages, ["color", "edit"])
+        self.assertEqual(self.resolve.page, "edit")
+        shutil.rmtree(res["_still"]["folder"])
+        res = self.do("preview", {"frame": 20, "width": 320})  # second time: no hop
+        self.assertEqual([c[2] for c in fake.PyRemoteObject.calls if c[1] == "OpenPage"], ["color", "edit"])
+        shutil.rmtree(res["_still"]["folder"])
+
+    def test_color_page_already_shown_means_no_hop(self):
+        self.resolve.color_shown = True
+        res = self.do("preview", {"frame": 10, "width": 320})
+        self.assertEqual([c for c in fake.PyRemoteObject.calls if c[1] == "OpenPage"], [])
+        shutil.rmtree(res["_still"]["folder"])
+
     def test_media_page_has_no_playhead(self):
+        self.resolve.color_shown = True
         self.resolve.page = "media"
         res = self.do("preview", {"frame": 10})
         self.assertEqual(self.resolve.page, "media", "page not put back")
@@ -333,33 +352,49 @@ class SaveOpen(Base):
         res = self.do("open", {"project": "Other"})
         self.assertEqual(res["project"], "Other")
         self.assertEqual(self.resolve.pm.current.name, "Other")
-        with self.assertRaisesRegex(CommandError, "no project named Nope"):
-            self.do("open", {"project": "Nope"})
+        self.assertEqual(self.resolve.pm.dialogs, 0)
 
-    def test_open_right_after_resolve_starts(self):
-        self.resolve.pm.add("Other")
-        self.resolve.pm.folder_set = False  # no current folder yet: Resolve lists no projects
-        self.assertEqual(self.do("open", {"project": "Other"})["project"], "Other")
+    def test_save_refuses_a_project_that_was_never_saved(self):
+        pm = self.resolve.pm
+        pm.CloseProject(self.project)  # Resolve shows an unsaved Untitled Project
+        self.assertFalse(self.do("info")["project"]["in_library"])
+        with self.assertRaisesRegex(CommandError, "never been saved.*File > Save Project"):
+            self.do("save")
+        self.assertEqual(pm.dialogs, 0, "the Save dialog would have opened")
+        self.assertEqual(pm.saves, 0)
+        self.assertTrue(self.do("info")["project"]["in_library"] is False)
 
-    def test_open_in_a_folder(self):
-        self.resolve.pm.folders["Clients"] = []
-        self.resolve.pm.add("Ad", folder="Clients")
-        res = self.do("open", {"project": "Ad", "folder": "Clients"})
-        self.assertEqual((res["project"], res["folder"]), ("Ad", "Clients"))
-        with self.assertRaisesRegex(CommandError, "no project folder"):
-            self.do("open", {"project": "Ad", "folder": "Missing"})
+    def test_open_over_an_empty_untitled_project_closes_it_first(self):
+        pm = self.resolve.pm
+        pm.CloseProject(self.project)
+        cmd = command("open", {"project": "Rooftop Story"})
+        self.assertIsNone(ops_module.Ops(self.resolve, can_ask=lambda: False).open_approval(cmd))
+        res = self.do("open", {"project": "Rooftop Story"})
+        self.assertEqual(res["project"], "Rooftop Story")
+        self.assertEqual(pm.dialogs, 0)
 
-    def test_open_asks_with_a_window_and_without_one_only_after_changes(self):
-        cmd = command("open", {"project": "Other"})
-        windowed = ops_module.Ops(self.resolve, can_ask=lambda: True)
-        req = windowed.open_approval(cmd)
-        self.assertEqual(req.approve_label, "Open project")
-        self.assertIn("Rooftop Story", req.lines[1])
-        headless = ops_module.Ops(self.resolve, can_ask=lambda: False)
-        self.assertIsNone(headless.open_approval(cmd))
-        headless.changed = True
-        self.assertIn("Save first", headless.open_approval(cmd).headless_error)
-        self.assertIsNone(windowed.open_approval(command("open", {"project": "Rooftop Story"})))
+    def test_open_over_an_untitled_project_with_content_is_refused(self):
+        pm = self.resolve.pm
+        pm.CloseProject(self.project)
+        pm.current.CreateEmptyTimeline("Scratch")
+        cmd = command("open", {"project": "Rooftop Story"})
+        for can_ask in (False, True):
+            ops = ops_module.Ops(self.resolve, can_ask=lambda: can_ask)
+            self.assertIsNone(ops.open_approval(cmd), "nothing to ask: it is refused outright")
+            with self.assertRaisesRegex(CommandError, "never been saved and is not empty.*File > Save Project"):
+                ops.do_open(cmd.args, None, cmd)
+        self.assertEqual(pm.dialogs, 0)
+        self.assertEqual(pm.current.name, "Untitled Project", "the plugin must not have called CloseProject on it")
+
+    def test_project_manager_state_is_explained(self):
+        # At startup Resolve shows only its Project Manager: no page, and media calls answer None.
+        self.resolve.page = None
+        for kind, args, prepared in (("preview", {}, None), ("export", {"format": "png"}, None),
+                                     ("import_asset", {"asset_id": "a"},
+                                      {"items": [{"kind": "video", "path": __file__, "asset_id": "a"}]})):
+            with self.assertRaisesRegex(CommandError, "Project Manager"):
+                self.do(kind, args, prepared)
+        self.assertIsNone(self.do("info")["page"])
 
 
 class ImportMedia(Base):

@@ -281,8 +281,24 @@ def main():
             assert res["frames"] == [0, 47], res
             res = expect_ok(caller.command("save"))
             assert res["saved"] is True, res
+            hopped = "Showed the Color page once" in window_log()
+            print("  first still export: %s" % ("Resolve needed the Color page shown once (the plugin did it)"
+                                               if hopped else "worked without showing the Color page"), flush=True)
 
         checks.check("LUT, a 2 s MP4 render and save in the app", lut_and_render)
+
+        def untitled_project():
+            # Close the throwaway project: Resolve shows an unsaved Untitled Project. save must refuse (no
+            # Save dialog); opening the throwaway again closes the empty untitled project first (no dialog).
+            res = expect_ok(caller.command("run", {"code":
+                "project_manager.CloseProject(project)\nresult = project_manager.GetCurrentProject().GetName()"}))
+            res2 = caller.command("save")
+            assert res2["status"] == "failed" and "never been saved" in res2["error"], res2
+            res3 = expect_ok(caller.command("open", {"project": project_name}))
+            assert res3["project"] == project_name, res3
+            print("  unsaved project %r: save refused, open closed it first" % res["value"], flush=True)
+
+        checks.check("save and open over an unsaved project, in the app", untitled_project)
 
         def approve_in_the_request_window():
             # Turn on Ask before running code, and have the request window's

@@ -129,6 +129,30 @@ returns the traceback.
   whether the project has unsaved changes, and cannot press buttons in
   Resolve's dialogs. Say so plainly and ask the person for the click instead of
   promising it.
+- `project_manager.SaveProject()` on a project that was never saved with a
+  name (Resolve's own New Project or Untitled Project: `project.GetName()` is
+  not in `project_manager.GetProjectListInCurrentFolder()` and
+  `project_manager.GetProjectLastModifiedTime(name)` is None) opens Resolve's
+  Save dialog and blocks every script until someone closes it. Never call it
+  on such a project. The plugin's `save` command checks first and refuses with
+  a message; `info` says `in_library: false`. Ask the person to save the
+  project once with a name (File > Save Project), then go on. Loading another
+  project over an unsaved project with content can raise the same question,
+  and `project_manager.CloseProject()` does not close such a project (Resolve
+  21.1.1 answers False, renames it with a timestamp and leaves an "Untitled
+  Project" in the library); `resolve.Quit()` asks too. The plugin's `open`
+  refuses over it; ask the person to save or close it by hand.
+- Right after Resolve starts only its Project Manager is up:
+  `resolve.GetCurrentPage()` is None, `resolve.OpenPage()` does nothing and
+  `media_pool.ImportMedia()` answers None. `nolgia_app_info` shows `page:
+  null` then; ask the person to open or create a project (or use the plugin's
+  `open` command, which works from that state).
+- `project.ExportCurrentFrameAsStill(path)` has been seen to answer False on
+  a fresh Resolve session (once, during a long session of imports and
+  renders; six fresh sessions since exported their first still fine). When it
+  does, `nolgia_app_preview` shows the Color page for a moment, comes back and
+  tries again. In your own code do the same: `resolve.OpenPage("color")`, go
+  back to the page you read first, and try again.
 - A long `run` holds the NOLGIA window until it ends. Keep runs short and set
   `timeout_seconds` for anything that may take a while. A dialog open in
   Resolve (a missing media prompt, a question about a project) holds every

@@ -44,6 +44,17 @@ MEDIA_KINDS = ("image", "video", "audio")
 # Pages where Resolve 21.1.1 has no timeline playhead for scripts
 # (GetCurrentTimecode answers None, SetCurrentTimecode fails).
 NO_PLAYHEAD_PAGES = ("media", "fusion")
+UNTITLED_SAVE = (
+    "The project %s has never been saved, and saving it from a script would open DaVinci Resolve's Save "
+    "dialog, which nobody could answer. In Resolve, choose File > Save Project and give it a name once; after "
+    "that, save works.")
+UNTITLED_OPEN = (
+    "The open project %s has never been saved and is not empty. Loading another project over it could make "
+    "DaVinci Resolve ask about saving it, and a script cannot close it (CloseProject refuses). In Resolve, "
+    "save it with a name (File > Save Project) or close it, then open %s.")
+NO_PAGE = (
+    "DaVinci Resolve is showing its Project Manager and no project page, so it cannot %s. Open or create a "
+    "project in Resolve (or use the open command), then try again.")
 
 
 def call(obj, method, *args, default=None):
@@ -93,6 +104,9 @@ class Ops:
         # changes, so this is what the plugin knows).
         self.changed = False
         self._raw_still_ext = None
+        # Resolve 21.1.1 exports no still in a fresh session until the Color
+        # page has been shown once; True once an export worked.
+        self._stills_ready = False
         # (job id, settings to put back) while NOLGIA's render runs.
         self.active_render = None
 
@@ -142,6 +156,35 @@ class Ops:
 
     def alive(self):
         return bool(call(self.resolve, "GetVersionString"))
+
+    def project_in_library(self, pm, project):
+        """Whether the open project is saved in Resolve's project library.
+
+        A project Resolve made itself (New Project, Untitled Project) is not
+        there until it is saved with a name: it is not in the folder's project
+        list and has no last modified time. Saving such a project from a
+        script opens Resolve's Save dialog, so the plugin checks first.
+        """
+        name = call(project, "GetName", default="") or ""
+        if call(pm, "GetCurrentFolder") is None:
+            call(pm, "GotoRootFolder")  # right after Resolve starts there is no current folder
+        names = call(pm, "GetProjectListInCurrentFolder", default=[]) or []
+        if name in names:
+            return True
+        return bool(call(pm, "GetProjectLastModifiedTime", name))
+
+    def require_page(self, what):
+        """At startup Resolve shows only its Project Manager: GetCurrentPage()
+        is None, OpenPage() does nothing and ImportMedia() answers None."""
+        if call(self.resolve, "GetCurrentPage") is None:
+            raise CommandError(NO_PAGE % what)
+
+    def project_is_empty(self, project):
+        """No timelines, no clips and no bins: nothing to lose."""
+        root = call(call(project, "GetMediaPool"), "GetRootFolder")
+        return (int(call(project, "GetTimelineCount", default=0) or 0) == 0
+                and not (call(root, "GetClipList", default=[]) or [])
+                and not (call(root, "GetSubFolderList", default=[]) or []))
 
     # -------------------------------------------------------- timeline math
 
@@ -216,10 +259,12 @@ class Ops:
             "name": call(project, "GetName"),
             "folder": call(pm, "GetCurrentFolder"),
             "database": db.get("DbName"),
+            "in_library": self.project_in_library(pm, project),
             "unsaved_changes": None,
             "changed_by_nolgia_since_save": self.changed,
             "note": "DaVinci Resolve's scripting cannot tell whether the project has unsaved changes. "
-                    "changed_by_nolgia_since_save says whether NOLGIA changed it since it was last saved or opened.",
+                    "changed_by_nolgia_since_save says whether NOLGIA changed it since it was last saved or opened. "
+                    "in_library is false for a project that has never been saved with a name (save refuses it).",
             "width": _int_or_none(settings.get("timelineResolutionWidth")),
             "height": _int_or_none(settings.get("timelineResolutionHeight")),
             "fps": _number(settings.get("timelineFrameRate")),
@@ -401,11 +446,31 @@ class Ops:
         return call(tl, "GetCurrentTimecode") == text
 
     def _export_still(self, project, path):
-        ok = call(project, "ExportCurrentFrameAsStill", path, default=False)
-        return bool(ok) and os.path.isfile(path) and os.path.getsize(path) > 0
+        for attempt in (0, 1):
+            ok = call(project, "ExportCurrentFrameAsStill", path, default=False)
+            if bool(ok) and os.path.isfile(path) and os.path.getsize(path) > 0:
+                self._stills_ready = True
+                return True
+            if attempt or self._stills_ready:
+                return False
+            self._wake_stills()
+        return False
+
+    def _wake_stills(self):
+        """In a fresh Resolve 21.1.1 session ExportCurrentFrameAsStill answers
+        False until the Color page has been shown once (its stills start with
+        that page). Show it for a moment and come back."""
+        page = call(self.resolve, "GetCurrentPage")
+        if page == "color":
+            return
+        if call(self.resolve, "OpenPage", "color", default=False):
+            self.log("Showed the Color page once so DaVinci Resolve can export stills.")
+            if page:
+                call(self.resolve, "OpenPage", page)
 
     def do_preview(self, args, prepared, command):
         project = self.project()
+        self.require_page("export a frame")
         tl = self.timeline(project, args.get("timeline"))
         facts = self.timeline_facts(tl)
         if not facts["duration"]:
@@ -467,6 +532,7 @@ class Ops:
 
     def do_export(self, args, prepared, command):
         project = self.project()
+        self.require_page("render or export")
         tl = self.timeline(project, args.get("timeline"))
         facts = self.timeline_facts(tl)
         name = call(tl, "GetName") or "timeline"
@@ -636,6 +702,8 @@ class Ops:
     def do_save(self, args, prepared, command):
         pm = self.project_manager()
         project = self.project()
+        if not self.project_in_library(pm, project):
+            raise CommandError(UNTITLED_SAVE % (call(project, "GetName", default="") or "Untitled Project"))
         if not call(pm, "SaveProject", default=False):
             raise CommandError("DaVinci Resolve did not save the project %s." % call(project, "GetName"))
         self.changed = False
@@ -645,10 +713,16 @@ class Ops:
         """Resolve cannot say whether the open project has unsaved changes,
         so with a window open the person is always asked. Without one, the
         plugin refuses only when its own commands changed the project."""
-        project = call(call(self.resolve, "GetProjectManager"), "GetCurrentProject")
+        pm = call(self.resolve, "GetProjectManager")
+        project = call(pm, "GetCurrentProject")
         current = call(project, "GetName", default="")
         target = command.args.get("project", "")
         if project is None or current == target:
+            return None
+        if not self.project_in_library(pm, project):
+            # Never saved. Empty: loading another project over it is fine
+            # (Resolve has nothing to ask about). With content: do_open
+            # refuses, in every mode, so nothing to ask here.
             return None
         if not self.can_ask() and not self.changed:
             return None
@@ -681,6 +755,12 @@ class Ops:
         if name not in names:
             raise CommandError("There is no project named %s in the project folder %s. Projects there: %s."
                                % (name, call(pm, "GetCurrentFolder") or "(top)", ", ".join(names[:50]) or "none"))
+        before = call(pm, "GetCurrentProject")
+        if before is not None and not self.project_in_library(pm, before) and not self.project_is_empty(before):
+            # Loading over an unsaved project with content could make Resolve
+            # ask about saving it, and CloseProject does not close such a
+            # project (Resolve 21.1.1 answers False and renames it), so stop.
+            raise CommandError(UNTITLED_OPEN % (call(before, "GetName", default="") or "Untitled Project", name))
         project = call(pm, "LoadProject", name)
         if project is None:
             raise CommandError("DaVinci Resolve did not open the project %s." % name)
@@ -707,6 +787,7 @@ class Ops:
         if args.get("apply_to") and not (len(items) == 1 and luts):
             raise CommandError("`apply_to` is for a single LUT (a color_preset or one .cube file); "
                                "this import has %s." % _describe(items))
+        self.require_page("import")
         if len(items) == 1 and luts:
             result = self.install_lut(args, luts[0])
             if luts[0].get("asset_id"):
