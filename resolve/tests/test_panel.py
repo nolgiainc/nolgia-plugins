@@ -77,9 +77,11 @@ class PanelTest(unittest.TestCase):
         self.assertEqual(self.item("Activity").header, ["Time", "Command", "Status", "Detail"])
         self.assertEqual(self.item("Activity").rows[0].Text[1], "Nothing yet.")
         self.assertIn("this window is open", self.item("Footer").Text)
-        # The window cannot be squeezed below the width its labels need, and the
-        # two wrapping labels have two lines of height (a long retry message
-        # once spilled over the title bar in a 230 px wide window).
+        # The Status label's minimum width sets the window width (UIManager sizes
+        # the window to its widest child), and the wrapping labels have two
+        # lines of height: a long retry message once spilled over the title bar
+        # in a 230 px wide window.
+        self.assertGreaterEqual(self.item("Status").props["MinimumSize"][0], 380)
         self.assertGreaterEqual(self.win.props["MinimumSize"][0], 400)
         for element_id in ("Status", "CodeHint", "Footer"):
             self.assertTrue(self.item(element_id).props["WordWrap"], element_id)

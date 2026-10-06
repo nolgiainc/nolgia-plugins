@@ -29,9 +29,14 @@ YIELD_IDLE = 0.005
 YIELD_BUSY = 0.030
 MAX_CODE_CHARS = 200000
 FOOTER = "NOLGIA works in this DaVinci Resolve while this window is open and Connected is on."
-# The window keeps a size at which every label fits: narrower than this the
-# status and the footer wrapped into space they did not have. Heights are
-# two lines of Resolve's UI font with some air.
+# Sizing, measured in Resolve 21.1.1: a UIManager window takes the width of
+# the widest Weight-0 child of its VGroup and cannot be dragged wider (its
+# own MinimumSize width loses to that; the height is free). So the Status
+# label's minimum width is what sets the window width, and it is wide
+# enough for every status line to fit in two lines. Word-wrapped labels keep
+# a one-line height unless given one, so the three that wrap get two lines
+# of Resolve's UI font with some air.
+CONTENT_WIDTH = 400
 MIN_WIDTH = 420
 MIN_HEIGHT = 560
 STATUS_LINES_PX = 40
@@ -78,11 +83,9 @@ class Panel:
         big = ui.Font({"PointSize": 18, "Bold": True})
         bold = ui.Font({"Bold": True})
         layout = ui.VGroup({"Spacing": 6}, [
-            # Word-wrapped labels keep a one-line height in UIManager's layout, so a
-            # long status (a retry message) overflowed its neighbours; give the two
-            # that wrap room for two lines and let the text start at the top.
             ui.Label({"ID": "Status", "Text": "", "WordWrap": True, "Weight": 0, "Font": bold,
-                      "MinimumSize": [0, STATUS_LINES_PX], "Alignment": {"AlignTop": True, "AlignLeft": True}}),
+                      "MinimumSize": [CONTENT_WIDTH, STATUS_LINES_PX],
+                      "Alignment": {"AlignTop": True, "AlignLeft": True}}),
             ui.Label({"ID": "Account", "Text": "", "WordWrap": True, "Weight": 0}),
             ui.Label({"ID": "Code", "Text": "", "Weight": 0, "Font": big, "Alignment": {"AlignHCenter": True}}),
             ui.Label({"ID": "CodeHint", "Text": "", "WordWrap": True, "Weight": 0,
