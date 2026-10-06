@@ -176,33 +176,47 @@ class Panel:
         first = pending[0]
         if self.request_shown == first.id and not force:
             return
-        self._close_request()
-        ui = self.ui
+        win = self.request_win or self._build_request()
         request = first.request
-        code = "\n".join(request.lines)[:MAX_CODE_CHARS]
+        items = win.GetItems()
+        items["RequestTitle"].Text = request.title
+        items["RequestCode"].PlainText = "\n".join(request.lines)[:MAX_CODE_CHARS]
+        items["Approve"].Text = request.approve_label
+        win.Show()
+        try:
+            win.Raise()
+        except Exception:
+            pass
+        self.request_shown = first.id
+        self.log("Asked the person: %s." % request.title)
+
+    def _build_request(self):
+        """The "NOLGIA request" window, made once and reused."""
+        ui = self.ui
         mono = ui.Font({"Family": "Consolas", "PointSize": 10, "MonoSpaced": True})
         layout = ui.VGroup({"Spacing": 6}, [
-            ui.Label({"ID": "RequestTitle", "Text": request.title, "WordWrap": True, "Weight": 0,
+            ui.Label({"ID": "RequestTitle", "Text": "", "WordWrap": True, "Weight": 0,
                       "Font": ui.Font({"Bold": True})}),
-            ui.TextEdit({"ID": "RequestCode", "PlainText": code, "ReadOnly": True, "Font": mono,
+            ui.TextEdit({"ID": "RequestCode", "PlainText": "", "ReadOnly": True, "Font": mono,
                          "LineWrapMode": "NoWrap", "Lexer": "python", "Weight": 1}),
             ui.Label({"Text": "Code runs on this computer with your permissions.", "Weight": 0}),
             ui.HGroup({"Weight": 0}, [
                 ui.HGap(0, 1),
                 ui.Button({"ID": "Deny", "Text": "Deny"}),
-                ui.Button({"ID": "Approve", "Text": request.approve_label}),
+                ui.Button({"ID": "Approve", "Text": "Approve"}),
             ]),
         ])
         win = self.disp.AddWindow({"ID": REQUEST_ID, "WindowTitle": "NOLGIA request",
                                    "Geometry": [180, 160, 680, 460]}, layout)
-        command_id = first.id
 
         def decide(approve):
             def handler(ev):
-                if approve:
-                    self.controller.executor.approve(command_id)
-                else:
-                    self.controller.executor.deny(command_id)
+                command_id = self.request_shown
+                if command_id is not None:
+                    if approve:
+                        self.controller.executor.approve(command_id)
+                    else:
+                        self.controller.executor.deny(command_id)
                 self.controller.bump()
                 self._close_request()
             return self._guard(handler)
@@ -211,24 +225,17 @@ class Panel:
         win.On.Deny.Clicked = decide(False)
         # Closing the request window leaves the request waiting in the NOLGIA window.
         win.On[REQUEST_ID].Close = self._guard(lambda ev: self._close_request())
-        win.Show()
-        try:
-            win.Raise()
-        except Exception:
-            pass
         self.request_win = win
-        self.request_shown = command_id
-        self.log("Asked the person: %s." % request.title)
+        return win
 
     def _close_request(self):
-        win, self.request_win = self.request_win, None
+        win = self.request_win
         if win is not None:
             try:
                 win.Hide()
             except Exception:
                 pass
-        if not self.controller.executor.approvals:
-            self.request_shown = None
+        self.request_shown = None
 
     # ------------------------------------------------------------- drawing
 

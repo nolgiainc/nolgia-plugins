@@ -15,7 +15,7 @@ runs commands until switched off:
 
 from .core import PLUGIN_VERSION
 
-__all__ = ["PLUGIN_VERSION", "open_window", "serve"]
+__all__ = ["PLUGIN_VERSION", "open_window", "serve", "connect", "disconnect", "status"]
 
 
 def open_window(resolve, fusion, bmd):
@@ -45,3 +45,27 @@ def serve(resolve=None):
     from . import runtime
 
     return runtime.serve(resolve)
+
+
+def _controller():
+    from . import runtime
+
+    if runtime.current is None:
+        raise RuntimeError("NOLGIA is not running in this DaVinci Resolve.")
+    return runtime.current
+
+
+def connect():
+    """Switch on, as the Connected switch does. Returns True when started."""
+    return _controller().connect()
+
+
+def disconnect():
+    """Switch off, as the Connected switch does. Without the window, serve()
+    then returns."""
+    _controller().disconnect()
+
+
+def status():
+    """The status line shown in the NOLGIA window."""
+    return _controller().status_line()

@@ -85,6 +85,8 @@ class Ops:
         # changes, so this is what the plugin knows).
         self.changed = False
         self._raw_still_ext = None
+        # (job id, settings to put back) while NOLGIA's render runs.
+        self.active_render = None
 
     # ------------------------------------------------------------ context
 
@@ -510,6 +512,7 @@ class Ops:
         except BaseException:
             self.finish_render(job, restore)
             raise
+        self.active_render = (job, restore)
         start, end = frames if frames else (0, facts["duration"] - 1)
         return {
             "_render": {"job": job, "folder": folder, "stem": stem, "restore": restore},
@@ -553,8 +556,20 @@ class Ops:
     def stop_render(self):
         call(self.project(), "StopRendering")
 
+    def abandon_render(self):
+        """The window is closing mid-render: stop it and tidy up now."""
+        if self.active_render is None:
+            return
+        job, restore = self.active_render
+        project = call(call(self.resolve, "GetProjectManager"), "GetCurrentProject")
+        if call(project, "IsRenderingInProgress", default=False):
+            call(project, "StopRendering")
+        self.finish_render(job, restore)
+
     def finish_render(self, job, restore):
         """Remove the job and put the person's render settings back."""
+        if self.active_render and self.active_render[0] == job:
+            self.active_render = None
         project = call(call(self.resolve, "GetProjectManager"), "GetCurrentProject")
         if project is None:
             return

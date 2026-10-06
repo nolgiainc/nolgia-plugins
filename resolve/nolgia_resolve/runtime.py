@@ -50,8 +50,8 @@ class LoginState:
         self.error = None
 
 
-class MainThreadGone(Exception):
-    pass
+# The controller of this Resolve, for nolgia_resolve.connect()/disconnect().
+current = None
 
 
 class Controller:
@@ -90,6 +90,8 @@ class Controller:
         self._last_alive = time.monotonic()
         self.on_approval = None  # set by the window: called with each new request
         self.resolve_gone = False
+        global current
+        current = self
 
     # ---------------------------------------------------------- settings
 
@@ -519,6 +521,10 @@ class Controller:
             if not worker.finished.is_set():
                 worker.kill()
                 worker.finished.wait(min(wait, 2.0) if wait else 0)
+        try:
+            self.ops.abandon_render()
+        except Exception as err:
+            self.log("Could not stop NOLGIA's render (%s)." % err)
         if self.lease is not None:
             self.lease.release()
             self.lease = None

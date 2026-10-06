@@ -268,6 +268,17 @@ class Export(Base):
         self.assertIsNone(self.project.rendering)
         self.assertEqual(self.project.jobs, {})
 
+    def test_closing_mid_render_stops_and_tidies(self):
+        before = dict(self.project.format_codec)
+        res = self.do("export", {"format": "mp4"})
+        self.assertIsNotNone(self.ops.active_render)
+        self.ops.abandon_render()
+        self.assertIsNone(self.project.rendering)
+        self.assertEqual(self.project.jobs, {})
+        self.assertEqual(self.project.format_codec, before)
+        self.assertIsNone(self.ops.active_render)
+        shutil.rmtree(res["_render"]["folder"], ignore_errors=True)
+
     def test_already_rendering(self):
         self.project.rendering = "someone-else"
         with self.assertRaisesRegex(CommandError, "already rendering"):
