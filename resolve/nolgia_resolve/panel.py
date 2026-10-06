@@ -29,6 +29,13 @@ YIELD_IDLE = 0.005
 YIELD_BUSY = 0.030
 MAX_CODE_CHARS = 200000
 FOOTER = "NOLGIA works in this DaVinci Resolve while this window is open and Connected is on."
+# The window keeps a size at which every label fits: narrower than this the
+# status and the footer wrapped into space they did not have. Heights are
+# two lines of Resolve's UI font with some air.
+MIN_WIDTH = 420
+MIN_HEIGHT = 560
+STATUS_LINES_PX = 40
+FOOTER_LINES_PX = 36
 
 # The open window, for nolgia_resolve.close_window().
 current = None
@@ -71,7 +78,11 @@ class Panel:
         big = ui.Font({"PointSize": 18, "Bold": True})
         bold = ui.Font({"Bold": True})
         layout = ui.VGroup({"Spacing": 6}, [
-            ui.Label({"ID": "Status", "Text": "", "WordWrap": True, "Weight": 0, "Font": bold}),
+            # Word-wrapped labels keep a one-line height in UIManager's layout, so a
+            # long status (a retry message) overflowed its neighbours; give the two
+            # that wrap room for two lines and let the text start at the top.
+            ui.Label({"ID": "Status", "Text": "", "WordWrap": True, "Weight": 0, "Font": bold,
+                      "MinimumSize": [0, STATUS_LINES_PX], "Alignment": {"AlignTop": True, "AlignLeft": True}}),
             ui.Label({"ID": "Account", "Text": "", "WordWrap": True, "Weight": 0}),
             ui.Label({"ID": "Code", "Text": "", "Weight": 0, "Font": big, "Alignment": {"AlignHCenter": True}}),
             ui.Label({"ID": "CodeHint", "Text": "", "WordWrap": True, "Weight": 0}),
@@ -99,10 +110,11 @@ class Panel:
             ]),
             ui.Tree({"ID": "Activity", "Weight": 1, "RootIsDecorated": False, "AlternatingRowColors": True,
                      "SelectionMode": "NoSelection"}),
-            ui.Label({"ID": "Footer", "Text": FOOTER, "WordWrap": True, "Weight": 0}),
+            ui.Label({"ID": "Footer", "Text": FOOTER, "WordWrap": True, "Weight": 0,
+                      "MinimumSize": [0, FOOTER_LINES_PX], "Alignment": {"AlignTop": True, "AlignLeft": True}}),
         ])
-        self.win = self.disp.AddWindow({"ID": WINDOW_ID, "WindowTitle": "NOLGIA", "Geometry": [120, 120, 440, 600]},
-                                       layout)
+        self.win = self.disp.AddWindow({"ID": WINDOW_ID, "WindowTitle": "NOLGIA", "Geometry": [120, 120, 440, 600],
+                                        "MinimumSize": [MIN_WIDTH, MIN_HEIGHT]}, layout)
         self.items = self.win.GetItems()
         tree = self.items["Activity"]
         tree.ColumnCount = 4

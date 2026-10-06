@@ -77,6 +77,14 @@ class PanelTest(unittest.TestCase):
         self.assertEqual(self.item("Activity").header, ["Time", "Command", "Status", "Detail"])
         self.assertEqual(self.item("Activity").rows[0].Text[1], "Nothing yet.")
         self.assertIn("this window is open", self.item("Footer").Text)
+        # The window cannot be squeezed below the width its labels need, and the
+        # two wrapping labels have two lines of height (a long retry message
+        # once spilled over the title bar in a 230 px wide window).
+        self.assertGreaterEqual(self.win.props["MinimumSize"][0], 400)
+        for element_id in ("Status", "Footer"):
+            self.assertTrue(self.item(element_id).props["WordWrap"], element_id)
+            self.assertGreaterEqual(self.item(element_id).props["MinimumSize"][1], 32, element_id)
+            self.assertTrue(self.item(element_id).props["Alignment"]["AlignTop"], element_id)
 
     def test_sign_in_connect_pause_and_sign_out(self):
         self.win.fire("SignIn")

@@ -5,7 +5,7 @@
 Integrations README describes them."""
 
 KNOWN_PROPS = {
-    "Label": {"ID", "Text", "WordWrap", "Weight", "Font", "Alignment", "Hidden"},
+    "Label": {"ID", "Text", "WordWrap", "Weight", "Font", "Alignment", "Hidden", "MinimumSize"},
     "Button": {"ID", "Text", "Weight", "Hidden", "Enabled", "ToolTip"},
     "CheckBox": {"ID", "Text", "Weight", "Checked", "Hidden", "ToolTip"},
     "Tree": {"ID", "Weight", "RootIsDecorated", "AlternatingRowColors", "SelectionMode", "ColumnCount", "Hidden"},
