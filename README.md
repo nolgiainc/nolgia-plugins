@@ -613,8 +613,13 @@ Windows 11 with DaVinci Resolve Studio 21.1.1 (build 10), on October 5,
 - in the app: installed with `install.cmd`, the NOLGIA window run inside
   Resolve the way the Scripts menu runs it, commands run from the window,
   the request window's Run code button, closing the window
-  (`resolve/tests/inapp_resolve.py`, 10 checks). Choosing NOLGIA from the
-  menu by hand and the look of the window have not been checked yet.
+  (`resolve/tests/inapp_resolve.py`, 10 checks);
+- by hand, on October 6, 2026, with External scripting left at None: NOLGIA
+  appears at the top level of the Workspace > Scripts menu, choosing it opens
+  the NOLGIA window, Sign in opens the browser and the codes match, and the
+  connected session then answered `info` through NOLGIA's MCP server. So the
+  External scripting preference is needed only to run the plugin from
+  outside Resolve, not for the menu.
 
 And against the real NOLGIA API (api.nolgia.ai) the same day, in a
 throwaway project, headless and in the app: `info`, `run`, `preview`,
