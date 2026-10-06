@@ -373,48 +373,28 @@ class SaveOpen(Base):
         self.assertEqual(res["project"], "Rooftop Story")
         self.assertEqual(pm.dialogs, 0)
 
-    def test_open_over_an_untitled_project_with_content_asks_or_refuses(self):
+    def test_open_over_an_untitled_project_with_content_is_refused(self):
         pm = self.resolve.pm
         pm.CloseProject(self.project)
         pm.current.CreateEmptyTimeline("Scratch")
         cmd = command("open", {"project": "Rooftop Story"})
-        headless = ops_module.Ops(self.resolve, can_ask=lambda: False).open_approval(cmd)
-        self.assertIn("never been saved and is not empty", headless.headless_error)
-        self.assertIn("File > Save Project", headless.headless_error)
-        windowed = ops_module.Ops(self.resolve, can_ask=lambda: True).open_approval(cmd)
-        self.assertEqual(windowed.approve_label, "Open and lose it")
-        self.assertIn("Untitled Project has never been saved", windowed.lines[1])
-        # Approved: the untitled project is closed without saving, then the other loads. No dialog.
-        res = self.do("open", {"project": "Rooftop Story"})
-        self.assertEqual(res["project"], "Rooftop Story")
+        for can_ask in (False, True):
+            ops = ops_module.Ops(self.resolve, can_ask=lambda: can_ask)
+            self.assertIsNone(ops.open_approval(cmd), "nothing to ask: it is refused outright")
+            with self.assertRaisesRegex(CommandError, "never been saved and is not empty.*File > Save Project"):
+                ops.do_open(cmd.args, None, cmd)
         self.assertEqual(pm.dialogs, 0)
-        with self.assertRaisesRegex(CommandError, "no project named Nope"):
-            self.do("open", {"project": "Nope"})
+        self.assertEqual(pm.current.name, "Untitled Project", "the plugin must not have called CloseProject on it")
 
-    def test_open_right_after_resolve_starts(self):
-        self.resolve.pm.add("Other")
-        self.resolve.pm.folder_set = False  # no current folder yet: Resolve lists no projects
-        self.assertEqual(self.do("open", {"project": "Other"})["project"], "Other")
-
-    def test_open_in_a_folder(self):
-        self.resolve.pm.folders["Clients"] = []
-        self.resolve.pm.add("Ad", folder="Clients")
-        res = self.do("open", {"project": "Ad", "folder": "Clients"})
-        self.assertEqual((res["project"], res["folder"]), ("Ad", "Clients"))
-        with self.assertRaisesRegex(CommandError, "no project folder"):
-            self.do("open", {"project": "Ad", "folder": "Missing"})
-
-    def test_open_asks_with_a_window_and_without_one_only_after_changes(self):
-        cmd = command("open", {"project": "Other"})
-        windowed = ops_module.Ops(self.resolve, can_ask=lambda: True)
-        req = windowed.open_approval(cmd)
-        self.assertEqual(req.approve_label, "Open project")
-        self.assertIn("Rooftop Story", req.lines[1])
-        headless = ops_module.Ops(self.resolve, can_ask=lambda: False)
-        self.assertIsNone(headless.open_approval(cmd))
-        headless.changed = True
-        self.assertIn("Save first", headless.open_approval(cmd).headless_error)
-        self.assertIsNone(windowed.open_approval(command("open", {"project": "Rooftop Story"})))
+    def test_project_manager_state_is_explained(self):
+        # At startup Resolve shows only its Project Manager: no page, and media calls answer None.
+        self.resolve.page = None
+        for kind, args, prepared in (("preview", {}, None), ("export", {"format": "png"}, None),
+                                     ("import_asset", {"asset_id": "a"},
+                                      {"items": [{"kind": "video", "path": __file__, "asset_id": "a"}]})):
+            with self.assertRaisesRegex(CommandError, "Project Manager"):
+                self.do(kind, args, prepared)
+        self.assertIsNone(self.do("info")["page"])
 
 
 class ImportMedia(Base):

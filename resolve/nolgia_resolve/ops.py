@@ -48,9 +48,13 @@ UNTITLED_SAVE = (
     "The project %s has never been saved, and saving it from a script would open DaVinci Resolve's Save "
     "dialog, which nobody could answer. In Resolve, choose File > Save Project and give it a name once; after "
     "that, save works.")
-UNTITLED_OPEN_HEADLESS = (
-    "The open project %s has never been saved and is not empty, and there is no NOLGIA window to ask the "
-    "person in. In Resolve, save it with a name (File > Save Project) or close it, then open %s.")
+UNTITLED_OPEN = (
+    "The open project %s has never been saved and is not empty. Loading another project over it could make "
+    "DaVinci Resolve ask about saving it, and a script cannot close it (CloseProject refuses). In Resolve, "
+    "save it with a name (File > Save Project) or close it, then open %s.")
+NO_PAGE = (
+    "DaVinci Resolve is showing its Project Manager and no project page, so it cannot %s. Open or create a "
+    "project in Resolve (or use the open command), then try again.")
 
 
 def call(obj, method, *args, default=None):
@@ -168,6 +172,12 @@ class Ops:
         if name in names:
             return True
         return bool(call(pm, "GetProjectLastModifiedTime", name))
+
+    def require_page(self, what):
+        """At startup Resolve shows only its Project Manager: GetCurrentPage()
+        is None, OpenPage() does nothing and ImportMedia() answers None."""
+        if call(self.resolve, "GetCurrentPage") is None:
+            raise CommandError(NO_PAGE % what)
 
     def project_is_empty(self, project):
         """No timelines, no clips and no bins: nothing to lose."""
@@ -460,6 +470,7 @@ class Ops:
 
     def do_preview(self, args, prepared, command):
         project = self.project()
+        self.require_page("export a frame")
         tl = self.timeline(project, args.get("timeline"))
         facts = self.timeline_facts(tl)
         if not facts["duration"]:
@@ -521,6 +532,7 @@ class Ops:
 
     def do_export(self, args, prepared, command):
         project = self.project()
+        self.require_page("render or export")
         tl = self.timeline(project, args.get("timeline"))
         facts = self.timeline_facts(tl)
         name = call(tl, "GetName") or "timeline"
@@ -708,20 +720,10 @@ class Ops:
         if project is None or current == target:
             return None
         if not self.project_in_library(pm, project):
-            # Never saved: Resolve would ask to save it when another project
-            # loads over it. do_open closes it first (without saving, as the
-            # API documents), so the person must agree to losing it, unless
-            # there is nothing in it.
-            if self.project_is_empty(project):
-                return None
-            return ApprovalRequest(
-                "%s wants to open another project" % command.caller_label,
-                ["Open: %s" % target,
-                 "The open project %s has never been saved. Opening %s loses what is in it. To keep it, click "
-                 "Deny, then save it with a name in Resolve (File > Save Project) first." % (current, target)],
-                headless_error=UNTITLED_OPEN_HEADLESS % (current, target),
-                approve_label="Open and lose it",
-            )
+            # Never saved. Empty: loading another project over it is fine
+            # (Resolve has nothing to ask about). With content: do_open
+            # refuses, in every mode, so nothing to ask here.
+            return None
         if not self.can_ask() and not self.changed:
             return None
         return ApprovalRequest(
@@ -754,11 +756,11 @@ class Ops:
             raise CommandError("There is no project named %s in the project folder %s. Projects there: %s."
                                % (name, call(pm, "GetCurrentFolder") or "(top)", ", ".join(names[:50]) or "none"))
         before = call(pm, "GetCurrentProject")
-        if before is not None and not self.project_in_library(pm, before):
-            # Loading over an unsaved project could make Resolve ask whether
-            # to save it. CloseProject closes without saving (documented), so
-            # no dialog can open; open_approval made sure the person agreed.
-            call(pm, "CloseProject", before)
+        if before is not None and not self.project_in_library(pm, before) and not self.project_is_empty(before):
+            # Loading over an unsaved project with content could make Resolve
+            # ask about saving it, and CloseProject does not close such a
+            # project (Resolve 21.1.1 answers False and renames it), so stop.
+            raise CommandError(UNTITLED_OPEN % (call(before, "GetName", default="") or "Untitled Project", name))
         project = call(pm, "LoadProject", name)
         if project is None:
             raise CommandError("DaVinci Resolve did not open the project %s." % name)
@@ -785,6 +787,7 @@ class Ops:
         if args.get("apply_to") and not (len(items) == 1 and luts):
             raise CommandError("`apply_to` is for a single LUT (a color_preset or one .cube file); "
                                "this import has %s." % _describe(items))
+        self.require_page("import")
         if len(items) == 1 and luts:
             result = self.install_lut(args, luts[0])
             if luts[0].get("asset_id"):

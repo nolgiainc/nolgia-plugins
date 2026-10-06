@@ -601,10 +601,17 @@ the project since it was last saved.
   opens Resolve's Save dialog, which blocks every script until someone
   closes it. So `save` refuses such a project and asks you to save it once
   by hand (File > Save Project); `info` reports it as `in_library: false`.
-  `open` closes an unsaved project without saving before it loads another
-  (Resolve could otherwise ask about saving it): with the NOLGIA window open
-  it asks you first unless the project is empty; without a window it refuses
-  unless the project is empty.
+  `open` loads another project over an *empty* unsaved one (Resolve has
+  nothing to ask about), but refuses when the unsaved project has content,
+  because Resolve could then ask about saving it and a script cannot close
+  such a project: in Resolve 21.1.1 `CloseProject()` on it answers False,
+  renames it with a timestamp and leaves an "Untitled Project" in the
+  library, and `Quit()` opens the save question. Save it with a name or
+  close it by hand first.
+- When Resolve starts it shows only its Project Manager: no page is open
+  (`info` reports `page: null`), and media calls do nothing. `import_asset`,
+  `preview` and `export` say so and ask you to open or create a project
+  (`open` works from there).
 - `append` adds each clip after the timeline's last clip, whatever its
   track, so audio and pictures follow one another rather than overlap.
 - Resolve runs a Scripts menu script in its own `fuscript` program, with the

@@ -102,7 +102,7 @@ else:
     elif action == "setup":
         pm.GotoRootFolder()
         # Never risk Resolve's "save this project?" dialog on the person's own
-        # unsaved project: close an empty one (CloseProject saves nothing), refuse otherwise.
+        # unsaved project: creating over an empty one is fine, refuse otherwise.
         if current is not None and current.GetName() not in pm.GetProjectListInCurrentFolder() \
                 and not pm.GetProjectLastModifiedTime(current.GetName()):
             pool = current.GetMediaPool()
@@ -113,8 +113,7 @@ else:
                                 "(File > Save Project) or close it, then run this again" % current.GetName())
                 print("HELPER " + json.dumps(out, default=str), flush=True)
                 sys.exit(0)
-            pm.CloseProject(current)
-            out["closed_unsaved"] = current.GetName()
+            out["over_unsaved"] = current.GetName()
         project = pm.CreateProject(arg["name"])
         if project is None:
             out["error"] = "CreateProject failed"
@@ -615,8 +614,8 @@ def main():
         res = helper(host, work, "setup", {"name": project_name})
         assert res["ok"], res
         state["project_open"] = True
-        if res.get("closed_unsaved"):
-            print("  closed the empty unsaved project %r first" % res["closed_unsaved"], flush=True)
+        if res.get("over_unsaved"):
+            print("  created over the empty unsaved project %r" % res["over_unsaved"], flush=True)
 
     if not checks.check("make and open a throwaway project", setup):
         return cleanup_and_finish(host, checks, work, opts, started, project_name, state, luts)
@@ -998,18 +997,9 @@ def main():
             assert res["project"] == project_name, res
             info_ = expect_ok(caller.command("info"))
             assert info_["project"]["in_library"] is True, info_["project"]
-            # An unsaved project with something in it: headless, open is refused before Resolve is touched.
-            expect_ok(caller.command("run", {"code":
-                "project_manager.CloseProject(project)\n"
-                "project_manager.GetCurrentProject().GetMediaPool().CreateEmptyTimeline('Scratch')\nresult = True"}))
-            res = caller.command("open", {"project": project_name})
-            assert res["status"] == "failed" and "never been saved and is not empty" in res["error"], res
-            # CloseProject closes without saving (documented): no dialog. Then the throwaway opens again.
-            res = expect_ok(caller.command("run", {"code":
-                "result = project_manager.CloseProject(project_manager.GetCurrentProject())"}))
-            assert res["value"] is True, res
-            res = expect_ok(caller.command("open", {"project": project_name}))
-            assert res["project"] == project_name, res
+            # (An unsaved project with content is not staged here: Resolve 21.1.1 neither closes it
+            # (CloseProject answers False and renames it) nor quits without asking. The plugin refuses
+            # open over such a project; the unit tests cover that.)
 
         checks.check("save and open never open a dialog over an unsaved project", untitled_project)
 

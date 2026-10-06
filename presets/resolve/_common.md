@@ -137,8 +137,16 @@ returns the traceback.
   on such a project. The plugin's `save` command checks first and refuses with
   a message; `info` says `in_library: false`. Ask the person to save the
   project once with a name (File > Save Project), then go on. Loading another
-  project over an unsaved one can raise the same question: the plugin's `open`
-  closes it first (`CloseProject` closes without saving), after asking.
+  project over an unsaved project with content can raise the same question,
+  and `project_manager.CloseProject()` does not close such a project (Resolve
+  21.1.1 answers False, renames it with a timestamp and leaves an "Untitled
+  Project" in the library); `resolve.Quit()` asks too. The plugin's `open`
+  refuses over it; ask the person to save or close it by hand.
+- Right after Resolve starts only its Project Manager is up:
+  `resolve.GetCurrentPage()` is None, `resolve.OpenPage()` does nothing and
+  `media_pool.ImportMedia()` answers None. `nolgia_app_info` shows `page:
+  null` then; ask the person to open or create a project (or use the plugin's
+  `open` command, which works from that state).
 - `project.ExportCurrentFrameAsStill(path)` answers False in a fresh Resolve
   session until the Color page has been shown once. `nolgia_app_preview`
   handles it (it shows the Color page for a moment and comes back). In your

@@ -535,9 +535,16 @@ class ProjectManager(PyRemoteObject):
         return self.current
 
     def CloseProject(self, project):
-        """Closes without saving (as documented): Resolve then shows an
-        unsaved Untitled Project."""
+        """A library project closes and Resolve shows an unsaved Untitled
+        Project. An unsaved project with content does not close (Resolve
+        21.1.1 answers False, renames it with a timestamp and puts an
+        "Untitled Project" into the library); an empty unsaved one closes."""
         if project is not self.current:
+            return False
+        has_content = project.timelines or project.pool.root.clips or project.pool.root.folders
+        if not project.saved and has_content:
+            project.name += " 2026-10-06_150820"
+            self.folders[""].append("Untitled Project")
             return False
         self.current = Project("Untitled Project", self, saved=False)
         return True
@@ -547,6 +554,9 @@ class ProjectManager(PyRemoteObject):
             if name in names:
                 return 1700000000
         return None
+
+    def GetProjectAttributesInCurrentFolder(self):
+        return {name: {} for name in self.GetProjectListInCurrentFolder()}
 
     def GetProjectListInCurrentFolder(self):
         return list(self.folders.get(self.folder, [])) if self.folder_set else []
@@ -593,7 +603,7 @@ class Resolve(PyRemoteObject):
         return True
 
     def GetCurrentPage(self):
-        return self.page
+        return self.page  # None while only the Project Manager is up
 
     def OpenPage(self, name):
         self._log("OpenPage", name)
