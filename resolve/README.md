@@ -64,7 +64,9 @@ switch NOLGIA off from code.
 | `timeline` | optional timeline name (`camera` is accepted as the same thing: it is what the MCP preview tool calls it); default the current timeline |
 | `width` | optional, 16 to 1920; default 1280, never wider than the timeline |
 
-Default frame: the current one. Result: `{asset_id, width, height,
+Default frame: the current one (Resolve has no playhead for scripts on the
+Media and Fusion pages, so the plugin switches to the Edit page for the
+moment it needs). Result: `{asset_id, width, height,
 mime_type, timeline, frame, timecode}`. The still is uploaded to the NOLGIA
 library: a PNG; when that would be over about 3.6 MB (too big for an agent
 to see inline), Resolve's own JPEG of the frame if it has the size asked
@@ -87,14 +89,19 @@ and optionally:
 | Argument | |
 |---|---|
 | `bin` | the media pool bin (under the top bin) to import into; made when missing; default `NOLGIA imports` |
-| `append` | `true` to add the media to the end of the current timeline, in order (a new timeline named `NOLGIA timeline` when none is open) |
+| `append` | `true` to add the media to the end of the current timeline, in order (a new timeline named `NOLGIA timeline` when none is open, made from the clips) |
 | `apply_to` | for a single LUT: `current` (the video clip under the playhead), `selected` (the clips selected in the timeline), `current_track` (every clip on the video track of the clip under the playhead) or `all` (every video clip in the timeline) |
 | `node` | the grade node to set the LUT on, from 1; default 1 |
 
-Images, video and audio are imported into the bin. A `.cube` file from the
-library (by name, type or content) and a color preset are installed as LUTs
-instead: into the `NOLGIA` folder of Resolve's LUT folder for the user, named
-after the preset or the file, then Resolve's LUT list is refreshed. A color
+Images, video and audio are imported into the bin. With `append`, each clip
+goes after the timeline's last clip, whatever its track (that is how Resolve
+21.1.1 appends), in the order given; Resolve leaves its playhead at the end.
+A `.cube` file from the library (by name, type or content) and a color preset
+are installed as LUTs instead: into a `NOLGIA` folder in the LUT folder
+Resolve reads (on Windows `%PROGRAMDATA%\Blackmagic Design\DaVinci Resolve\Support\LUT`,
+the folder for all users, which every user may write to; see the main README
+for macOS and Linux), named after the preset or the file, then Resolve's LUT
+list is refreshed. A color
 preset replaces its own older copy; a library LUT never replaces another
 file (it gets a number). 3D models are refused. With `project_id`, other
 kinds of assets are skipped and listed in `skipped`.
@@ -124,9 +131,12 @@ Result for a LUT (`color_preset`, or a single `.cube` asset):
 }
 ```
 
-`lut` is the path Resolve lists the LUT under. When `apply_to` is given and
-no clip took the LUT, the command fails, with the result above (the LUT stays
-installed).
+`lut` is the path under the LUT folder (Resolve 21.1.1's own `GetLUT()` then
+reports it as `NOLGIA\Kodak Portra 400.cube` on Windows). When `apply_to` is
+given and no clip took the LUT, the command fails, with the result above (the
+LUT stays installed). `current` and `current_track` need a video clip under
+the playhead; on the Media and Fusion pages, which have no playhead for
+scripts, the plugin switches to the Edit page for the moment it needs.
 
 ## `export`
 
@@ -141,7 +151,9 @@ Renders at the timeline's size and uploads the file. Result: `{asset_id,
 format, filename, frames: [first, last], width, height, timeline}`, plus
 `timecode` for `png`. Renders go to a temporary folder (never over a file of
 yours) that is removed afterwards; the render job is removed from the render
-queue and the Deliver page's settings are put back.
+queue, the Deliver page's settings, the page Resolve was on and the
+playhead are put back (rendering opens the Deliver page and moves the
+playhead).
 
 ## `save`
 

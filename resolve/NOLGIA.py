@@ -2,7 +2,7 @@
 # Copyright (C) 2026 NOLGIA Inc
 """NOLGIA for DaVinci Resolve.
 
-In DaVinci Resolve Studio: Workspace > Scripts > NOLGIA opens the NOLGIA
+In DaVinci Resolve Studio: NOLGIA in the Workspace > Scripts menu opens the NOLGIA
 window, where you sign in and switch NOLGIA on.
 
 Next to a running Resolve (External scripting set to Local), for render
@@ -71,7 +71,7 @@ def main(scope):
     fusion_app = scope.get("fusion") or scope.get("fu")
     bmd_module = scope.get("bmd")
     if resolve_app is None or fusion_app is None or bmd_module is None:
-        print("NOLGIA: open this from DaVinci Resolve (Workspace > Scripts > NOLGIA), "
+        print("NOLGIA: open this from DaVinci Resolve (Workspace > Scripts, then NOLGIA), "
               "or run it with --serve next to a running Resolve.")
         sys.exit(2)
     load().open_window(resolve_app, fusion_app, bmd_module)

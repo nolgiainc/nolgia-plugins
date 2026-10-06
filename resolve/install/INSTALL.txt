@@ -14,7 +14,7 @@ Install
      Windows: %APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility
      macOS:   ~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility
      Linux:   ~/.local/share/DaVinciResolve/Fusion/Scripts/Utility
-3. Start DaVinci Resolve and open Workspace > Scripts > NOLGIA.
+3. Start DaVinci Resolve, open the Workspace > Scripts menu and choose NOLGIA.
 4. Click Sign in. Your browser opens a NOLGIA page; check that the code
    matches the one in the NOLGIA window and approve it.
 5. Keep the NOLGIA window open with Connected on, and ask your agent to work

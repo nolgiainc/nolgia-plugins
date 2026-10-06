@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 NOLGIA Inc
-"""The NOLGIA window inside DaVinci Resolve (Workspace > Scripts > NOLGIA),
+"""The NOLGIA window inside DaVinci Resolve (NOLGIA in Workspace > Scripts),
 built with Resolve's UIManager.
 
 The window lives as long as the script: closing it switches NOLGIA off for

@@ -6,7 +6,7 @@ The plugin signs in to NOLGIA, connects out to it, and runs the commands your
 agent sends (look at the project, run Python, export a preview still, import
 and export files, save, open) while its window is open and Connected is on.
 
-Inside Resolve: Workspace > Scripts > NOLGIA opens the window (`open_window`).
+Inside Resolve: NOLGIA in the Workspace > Scripts menu opens the window (`open_window`).
 Outside it, with External scripting set to Local, `serve()` connects and
 runs commands until switched off:
 

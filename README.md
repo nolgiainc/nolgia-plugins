@@ -436,9 +436,10 @@ each line starting with `NOLGIA:`.
 ## NOLGIA for DaVinci Resolve
 
 A script plugin for DaVinci Resolve Studio 21.1 and newer (since 21.1 Resolve
-runs Python scripts only in the Studio edition). It runs in Resolve's own
-Python, so there is nothing else to install. It is written for Windows and
-macOS (and Linux); see [Tested on](#tested-on) for where it has run.
+runs Python scripts only in the Studio edition). It uses only Python's
+standard library, so there is nothing else to install. Tested on Windows; it is written
+for macOS and Linux too, but has not been run there yet (see
+[Tested on](#tested-on)).
 
 ### Install and use
 
@@ -453,8 +454,8 @@ macOS (and Linux); see [Tested on](#tested-on) for where it has run.
    - Windows: `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility`
    - macOS: `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility`
    - Linux: `~/.local/share/DaVinciResolve/Fusion/Scripts/Utility`
-3. Start Resolve and open Workspace > Scripts > NOLGIA. The NOLGIA window
-   opens.
+3. Start Resolve, open the Workspace > Scripts menu and choose NOLGIA. The
+   NOLGIA window opens.
 4. Click Sign in. Your browser opens a NOLGIA page; check that the code
    matches the one in the NOLGIA window and approve it.
 5. Keep the NOLGIA window open with Connected on, and ask your agent to work
@@ -480,9 +481,8 @@ for your user: `%APPDATA%\NOLGIA\resolve` on Windows,
 `~/Library/Application Support/NOLGIA/resolve` on macOS and
 `~/.config/nolgia/resolve` on Linux. On macOS and Linux the file is readable
 only by you (mode 600); on Windows it sits in your own `%APPDATA%`. Next to it
-is a log of what the plugin did (`nolgia.log`, never the token; Workspace >
-Console shows the same lines). A saved sign in is only ever sent to the API it
-came from.
+is a log of what the plugin did (`nolgia.log`, never the token). A saved sign
+in is only ever sent to the API it came from.
 
 Python that NOLGIA runs in Resolve runs on your computer with your
 permissions, like any script. Turn on Ask before running code if you want to
@@ -507,13 +507,22 @@ of the timeline (Resolve's own API numbers frames from the start timecode,
 
 **LUTs.** NOLGIA's film-look color presets come from the API it uses
 (`GET /color-presets`, public). `import_asset` installs a LUT into a `NOLGIA`
-folder in Resolve's LUT folder for your user: `%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\LUT\NOLGIA`
-on Windows, `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/NOLGIA`
-on macOS and `~/.local/share/DaVinciResolve/LUT/NOLGIA` on Linux (none of
-them needs administrator rights), named after the preset or the file
-(`Kodak Portra 400.cube`), and refreshes Resolve's LUT list. A color preset
-replaces its own older copy; a LUT from your library never replaces another
-file.
+folder in the LUT folder DaVinci Resolve reads, named after the preset or the
+file (`Kodak Portra 400.cube`), and refreshes Resolve's LUT list. A color
+preset replaces its own older copy; a LUT from your library never replaces
+another file. The LUT folder:
+
+- Windows: `%PROGRAMDATA%\Blackmagic Design\DaVinci Resolve\Support\LUT\NOLGIA`.
+  This is Resolve's LUT folder for all users of the computer; Resolve 21.1
+  did not read LUTs from a folder under `%APPDATA%`. Resolve's installer lets
+  every user write there, so no administrator rights are needed.
+- macOS: `/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/NOLGIA`
+  (Resolve's documented LUT folder), or, when that cannot be written without
+  administrator rights, `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/NOLGIA`.
+  Not yet tried: which of the two Resolve reads on a Mac is still to be checked.
+- Linux: `/opt/resolve/LUT/NOLGIA`, else `~/.local/share/DaVinciResolve/LUT/NOLGIA`
+  (not yet tried).
+- Anywhere: `NOLGIA_LUT_DIR`, or Resolve's own `BMD_RESOLVE_LUT_DIR`, when set.
 
 Imported media stays on disk where Resolve can find it, in
 `Documents/NOLGIA imports/<project>/<asset id>/` (or `NOLGIA_IMPORT_DIR`).
@@ -565,14 +574,35 @@ the project since it was last saved.
 - Commands run one at a time on the NOLGIA script's own thread, the only one
   that calls Resolve. A long `run` holds the NOLGIA window until it ends; a
   render does not (the plugin checks on it between clicks).
+- Rendering opens Resolve's Deliver page and moves the playhead; the plugin
+  puts both back. Adding clips to a timeline leaves Resolve's playhead at its
+  end. On the Media and Fusion pages Resolve has no timeline playhead for
+  scripts, so `preview`, a `png` export and `apply_to: "current"` switch to
+  the Edit page for a moment and back.
+- `append` adds each clip after the timeline's last clip, whatever its
+  track, so audio and pictures follow one another rather than overlap.
+- Resolve runs a Scripts menu script in its own `fuscript` program, with the
+  Python it finds on the computer (on the Windows test machine that was an
+  installed Python 3.11, not Resolve's own 3.14). The plugin uses only
+  Python's standard library and has been run with Python 3.10, 3.11 and 3.14.
 - Resolve finds new scripts when it starts, so restart it after installing or
   updating.
 
 ### Tested on
 
-Not yet run against a real DaVinci Resolve: the unit tests pass, and the
-end-to-end and in-app tests are waiting for External scripting to be set to
-Local on the test machine. It has not been run on macOS or Linux.
+Windows 11 with DaVinci Resolve Studio 21.1.1 (build 10), on October 5,
+2026, against the mock API:
+
+- headless (`NOLGIA.py --serve` under Resolve's own Python 3.14, Resolve open
+  with External scripting set to Local): every command, in a throwaway
+  project (`resolve/tests/e2e_resolve.py`, 31 checks);
+- in the app: installed with `install.cmd`, the NOLGIA window run inside
+  Resolve the way the Scripts menu runs it, commands run from the window,
+  the request window's Run code button, closing the window
+  (`resolve/tests/inapp_resolve.py`, 10 checks). Choosing NOLGIA from the
+  menu by hand and the look of the window have not been checked yet.
+
+Not yet run on macOS or Linux, and not yet against the real NOLGIA API.
 
 ### Development
 
@@ -583,12 +613,22 @@ of [`blender/core/`](blender/core/), kept the same by
 lists the few places they may differ (the app's constants, the argument
 checks, the app's name in messages): copy a fix made in one to the other.
 The unit tests run with plain Python 3.10 or newer against stand-ins for
-Resolve and its UIManager and the mock API, including the macOS and Linux
-paths and installer with the platform patched:
+Resolve and its UIManager (which follow what Resolve 21.1.1 was seen to do)
+and the mock API, including the macOS and Linux paths and installer with the
+platform patched:
 
 ```sh
 python3 -m unittest discover -s resolve/tests -p 'test_*.py'
 ```
+
+On threads: every Resolve call is made from the script's main thread, one
+command at a time (the network threads never call Resolve). Simple read
+calls from a background Python thread did work in Resolve 21.1.1, both from
+ResolvePython and inside the app, but nothing documents the API as thread
+safe. Inside the app, UIManager's `RunLoop()` holds Python's lock most of the
+time, so the window's timer (every 50 ms, delivered to the dispatcher's
+`On.Timeout`) sleeps a few milliseconds each tick to let the network threads
+run.
 
 The end-to-end test builds the download, starts Resolve without its window
 (or uses the open one with `--use-running`), makes a throwaway project, runs

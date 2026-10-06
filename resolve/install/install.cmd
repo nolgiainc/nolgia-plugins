@@ -12,7 +12,7 @@ copy /Y "%SOURCE%\NOLGIA.py" "%TARGET%\NOLGIA.py" >nul || goto failed
 copy /Y "%SOURCE%\nolgia_resolve.zip" "%TARGET%\nolgia_resolve.zip" >nul || goto failed
 echo NOLGIA is installed in:
 echo   %TARGET%
-echo Restart DaVinci Resolve, then open Workspace ^> Scripts ^> NOLGIA.
+echo Restart DaVinci Resolve, then choose NOLGIA in the Workspace ^> Scripts menu.
 if /I not "%~1"=="/quiet" pause
 exit /b 0
 :failed

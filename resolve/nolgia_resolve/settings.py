@@ -117,7 +117,7 @@ def _private_folder(folder):
 
 
 class Log:
-    """NOLGIA's log: printed (Workspace > Console shows it) and appended to
+    """NOLGIA's log: printed (to the console of the program running it) and appended to
     nolgia.log in the config folder, cut back when it passes `limit` bytes.
     Callers never pass the token."""
 
