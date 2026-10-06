@@ -24,6 +24,7 @@ No arguments. Result:
   page,                                           // media, cut, edit, fusion, color, fairlight, deliver (or photo)
   document: {name},                               // the open project's name
   project: {name, folder, database, width, height, fps,
+            in_library: bool,                     // false for a project never saved with a name
             unsaved_changes: null,                // Resolve's scripting cannot tell
             changed_by_nolgia_since_save: bool, note} | null,
   timeline: {name, fps, width, height, start_timecode, start_frame, end_frame, duration_frames,
@@ -160,6 +161,13 @@ playhead).
 No arguments (a `path` is refused: Resolve keeps projects in its project
 library). Saves the open project. Result: `{project, saved: true}`.
 
+A project Resolve made itself (New Project, Untitled Project) is not in the
+project library until it is saved with a name (`info` reports `in_library:
+false`), and Resolve's `SaveProject()` on it opens the Save dialog, which
+blocks every script until someone closes it. `save` refuses such a project
+instead, with a message asking the person to save it once by hand (File >
+Save Project).
+
 ## `open`
 
 | Argument | |
@@ -172,3 +180,11 @@ scripting cannot tell whether the open project has unsaved changes, so with
 the NOLGIA window open the person is asked first (Open project or Deny);
 without a window it is refused only when NOLGIA itself changed the project
 since it was last saved.
+
+When the open project has never been saved (`in_library: false`), loading
+another over it could make Resolve ask about saving it, so the plugin closes
+it first with `CloseProject`, which Resolve documents as closing without
+saving. An empty one (no timelines, clips or bins) is closed without asking;
+one with content needs the person's Open and lose it in the NOLGIA window,
+and is refused without a window, with a message to save it with a name or
+close it by hand first.

@@ -129,6 +129,21 @@ returns the traceback.
   whether the project has unsaved changes, and cannot press buttons in
   Resolve's dialogs. Say so plainly and ask the person for the click instead of
   promising it.
+- `project_manager.SaveProject()` on a project that was never saved with a
+  name (Resolve's own New Project or Untitled Project: `project.GetName()` is
+  not in `project_manager.GetProjectListInCurrentFolder()` and
+  `project_manager.GetProjectLastModifiedTime(name)` is None) opens Resolve's
+  Save dialog and blocks every script until someone closes it. Never call it
+  on such a project. The plugin's `save` command checks first and refuses with
+  a message; `info` says `in_library: false`. Ask the person to save the
+  project once with a name (File > Save Project), then go on. Loading another
+  project over an unsaved one can raise the same question: the plugin's `open`
+  closes it first (`CloseProject` closes without saving), after asking.
+- `project.ExportCurrentFrameAsStill(path)` answers False in a fresh Resolve
+  session until the Color page has been shown once. `nolgia_app_preview`
+  handles it (it shows the Color page for a moment and comes back). In your
+  own code, `resolve.OpenPage("color")`, go back to the page you read first,
+  and try again.
 - A long `run` holds the NOLGIA window until it ends. Keep runs short and set
   `timeout_seconds` for anything that may take a while. A dialog open in
   Resolve (a missing media prompt, a question about a project) holds every

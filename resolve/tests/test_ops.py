@@ -69,6 +69,7 @@ class Info(Base):
         self.assertEqual(res["page"], "edit")
         self.assertEqual(res["document"], {"name": "Rooftop Story"})
         self.assertEqual(res["project"]["name"], "Rooftop Story")
+        self.assertTrue(res["project"]["in_library"])
         self.assertIsNone(res["project"]["unsaved_changes"])
         self.assertIs(res["project"]["changed_by_nolgia_since_save"], False)
         tl = res["timeline"]
@@ -258,7 +259,25 @@ class Export(Base):
         finisher(command("export", {"format": "mp4"}), res)
         self.assertEqual(self.tl.playhead, self.tl.start + 30)
 
+    def test_fresh_session_shows_the_color_page_once(self):
+        # Resolve 21.1.1 exports no still until the Color page has been shown.
+        res = self.do("preview", {"frame": 10, "width": 320})
+        pages = [c[2] for c in fake.PyRemoteObject.calls if c[1] == "OpenPage"]
+        self.assertEqual(pages, ["color", "edit"])
+        self.assertEqual(self.resolve.page, "edit")
+        shutil.rmtree(res["_still"]["folder"])
+        res = self.do("preview", {"frame": 20, "width": 320})  # second time: no hop
+        self.assertEqual([c[2] for c in fake.PyRemoteObject.calls if c[1] == "OpenPage"], ["color", "edit"])
+        shutil.rmtree(res["_still"]["folder"])
+
+    def test_color_page_already_shown_means_no_hop(self):
+        self.resolve.color_shown = True
+        res = self.do("preview", {"frame": 10, "width": 320})
+        self.assertEqual([c for c in fake.PyRemoteObject.calls if c[1] == "OpenPage"], [])
+        shutil.rmtree(res["_still"]["folder"])
+
     def test_media_page_has_no_playhead(self):
+        self.resolve.color_shown = True
         self.resolve.page = "media"
         res = self.do("preview", {"frame": 10})
         self.assertEqual(self.resolve.page, "media", "page not put back")
@@ -333,6 +352,42 @@ class SaveOpen(Base):
         res = self.do("open", {"project": "Other"})
         self.assertEqual(res["project"], "Other")
         self.assertEqual(self.resolve.pm.current.name, "Other")
+        self.assertEqual(self.resolve.pm.dialogs, 0)
+
+    def test_save_refuses_a_project_that_was_never_saved(self):
+        pm = self.resolve.pm
+        pm.CloseProject(self.project)  # Resolve shows an unsaved Untitled Project
+        self.assertFalse(self.do("info")["project"]["in_library"])
+        with self.assertRaisesRegex(CommandError, "never been saved.*File > Save Project"):
+            self.do("save")
+        self.assertEqual(pm.dialogs, 0, "the Save dialog would have opened")
+        self.assertEqual(pm.saves, 0)
+        self.assertTrue(self.do("info")["project"]["in_library"] is False)
+
+    def test_open_over_an_empty_untitled_project_closes_it_first(self):
+        pm = self.resolve.pm
+        pm.CloseProject(self.project)
+        cmd = command("open", {"project": "Rooftop Story"})
+        self.assertIsNone(ops_module.Ops(self.resolve, can_ask=lambda: False).open_approval(cmd))
+        res = self.do("open", {"project": "Rooftop Story"})
+        self.assertEqual(res["project"], "Rooftop Story")
+        self.assertEqual(pm.dialogs, 0)
+
+    def test_open_over_an_untitled_project_with_content_asks_or_refuses(self):
+        pm = self.resolve.pm
+        pm.CloseProject(self.project)
+        pm.current.CreateEmptyTimeline("Scratch")
+        cmd = command("open", {"project": "Rooftop Story"})
+        headless = ops_module.Ops(self.resolve, can_ask=lambda: False).open_approval(cmd)
+        self.assertIn("never been saved and is not empty", headless.headless_error)
+        self.assertIn("File > Save Project", headless.headless_error)
+        windowed = ops_module.Ops(self.resolve, can_ask=lambda: True).open_approval(cmd)
+        self.assertEqual(windowed.approve_label, "Open and lose it")
+        self.assertIn("Untitled Project has never been saved", windowed.lines[1])
+        # Approved: the untitled project is closed without saving, then the other loads. No dialog.
+        res = self.do("open", {"project": "Rooftop Story"})
+        self.assertEqual(res["project"], "Rooftop Story")
+        self.assertEqual(pm.dialogs, 0)
         with self.assertRaisesRegex(CommandError, "no project named Nope"):
             self.do("open", {"project": "Nope"})
 

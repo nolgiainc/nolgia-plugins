@@ -101,6 +101,20 @@ else:
         out["ok"] = True
     elif action == "setup":
         pm.GotoRootFolder()
+        # Never risk Resolve's "save this project?" dialog on the person's own
+        # unsaved project: close an empty one (CloseProject saves nothing), refuse otherwise.
+        if current is not None and current.GetName() not in pm.GetProjectListInCurrentFolder() \
+                and not pm.GetProjectLastModifiedTime(current.GetName()):
+            pool = current.GetMediaPool()
+            root = pool.GetRootFolder()
+            empty = current.GetTimelineCount() == 0 and not root.GetClipList() and not root.GetSubFolderList()
+            if not empty:
+                out["error"] = ("the open project %r has never been saved and is not empty; save it with a name "
+                                "(File > Save Project) or close it, then run this again" % current.GetName())
+                print("HELPER " + json.dumps(out, default=str), flush=True)
+                sys.exit(0)
+            pm.CloseProject(current)
+            out["closed_unsaved"] = current.GetName()
         project = pm.CreateProject(arg["name"])
         if project is None:
             out["error"] = "CreateProject failed"
@@ -134,9 +148,10 @@ else:
         if project is not None and project.GetName() == name:
             pm.CloseProject(project)
         back = arg.get("back")
-        if back and back != name:
-            pm.LoadProject(back)
         pm.GotoRootFolder()
+        # Only a project in the library can be opened again; an unsaved one is gone.
+        if back and back != name and back in pm.GetProjectListInCurrentFolder():
+            pm.LoadProject(back)
         out["deleted"] = pm.DeleteProject(name)
         out["left"] = [p for p in pm.GetProjectListInCurrentFolder() if p.startswith("NOLGIA e2e")]
         out["project"] = pm.GetCurrentProject().GetName() if pm.GetCurrentProject() else None
@@ -600,6 +615,8 @@ def main():
         res = helper(host, work, "setup", {"name": project_name})
         assert res["ok"], res
         state["project_open"] = True
+        if res.get("closed_unsaved"):
+            print("  closed the empty unsaved project %r first" % res["closed_unsaved"], flush=True)
 
     if not checks.check("make and open a throwaway project", setup):
         return cleanup_and_finish(host, checks, work, opts, started, project_name, state, luts)
@@ -777,6 +794,12 @@ def main():
             assert res["width"] == 640, res
             assert res["frame"] == 0 and res["timecode"] == made["timeline"]["start_timecode"], res
             made["preview"] = res
+            # In a fresh Resolve session the first still export fails until the
+            # Color page has been shown once; the plugin shows it and goes back.
+            hopped = "Showed the Color page once" in serve_log()
+            print("  first still export: %s" % ("Resolve needed the Color page shown once (the plugin did it)"
+                                               if hopped else "worked without showing the Color page"), flush=True)
+            made["color_hop"] = hopped
             if mcp is not None:
                 out, parts = mcp.call("nolgia_app_preview", {"app": "resolve", "width": 480, "frame": 0})
                 assert out["status"] == "succeeded", out
@@ -955,6 +978,40 @@ def main():
             assert info_["project"]["changed_by_nolgia_since_save"] is False, info_["project"]
 
         checks.check("save, then open checks", save_and_open)
+
+        def untitled_project():
+            # Close the throwaway project: Resolve then shows an unsaved project
+            # (Untitled Project) that is not in the project library.
+            res = expect_ok(caller.command("run", {"code":
+                "project_manager.CloseProject(project)\nresult = project_manager.GetCurrentProject().GetName()"}))
+            untitled = res["value"]
+            info_ = expect_ok(caller.command("info"))
+            assert info_["project"]["name"] == untitled, info_["project"]
+            assert info_["project"]["in_library"] is False, info_["project"]
+            print("  Resolve's unsaved project is named %r" % untitled, flush=True)
+            # save must not open Resolve's Save dialog: it refuses instead.
+            res = caller.command("save")
+            assert res["status"] == "failed" and "never been saved" in res["error"], res
+            assert "File > Save Project" in res["error"], res["error"]
+            # Empty, so another project may open over it: the plugin closes it first (no dialog).
+            res = expect_ok(caller.command("open", {"project": project_name}))
+            assert res["project"] == project_name, res
+            info_ = expect_ok(caller.command("info"))
+            assert info_["project"]["in_library"] is True, info_["project"]
+            # An unsaved project with something in it: headless, open is refused before Resolve is touched.
+            expect_ok(caller.command("run", {"code":
+                "project_manager.CloseProject(project)\n"
+                "project_manager.GetCurrentProject().GetMediaPool().CreateEmptyTimeline('Scratch')\nresult = True"}))
+            res = caller.command("open", {"project": project_name})
+            assert res["status"] == "failed" and "never been saved and is not empty" in res["error"], res
+            # CloseProject closes without saving (documented): no dialog. Then the throwaway opens again.
+            res = expect_ok(caller.command("run", {"code":
+                "result = project_manager.CloseProject(project_manager.GetCurrentProject())"}))
+            assert res["value"] is True, res
+            res = expect_ok(caller.command("open", {"project": project_name}))
+            assert res["project"] == project_name, res
+
+        checks.check("save and open never open a dialog over an unsaved project", untitled_project)
 
         def open_refuses_after_changes():
             expect_ok(caller.command("run", {"code": "result = 1"}))
