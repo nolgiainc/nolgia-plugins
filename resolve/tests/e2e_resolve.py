@@ -421,7 +421,7 @@ def main():
             if host.resolve_running():
                 raise AssertionError(
                     "DaVinci Resolve is running but does not answer scripts. Set Preferences > System > General > "
-                    "External scripting using to Local, then try again. (%s)" % probe.get("error", "")[-300:])
+                    "External scripting to Local, then try again. (%s)" % probe.get("error", "")[-300:])
             state["resolve_proc"] = host.start_resolve(os.path.join(work, "resolve.log"))
             end = time.time() + 240
             while time.time() < end:

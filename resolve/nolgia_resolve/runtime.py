@@ -594,7 +594,7 @@ def serve(resolve=None, env=None):
     log = Log(paths.config_dir(env=env))
     if resolve is None or not ops_module.call(resolve, "GetVersionString"):
         log("Could not reach DaVinci Resolve. Start DaVinci Resolve Studio and set Preferences > System > "
-            "General > External scripting using to Local, then try again.")
+            "General > External scripting to Local, then try again.")
         return False
     controller = Controller(resolve, log=log, has_window=False, env=env)
     try:

@@ -522,7 +522,7 @@ Resolve does not import 3D models.
 ### Without the NOLGIA window (render machines, scripts, tests)
 
 With Resolve open (or started without its window, `Resolve -nogui`) and
-Preferences > System > General > External scripting using set to Local, run
+Preferences > System > General > External scripting set to Local, run
 the installed `NOLGIA.py` with Resolve's own Python:
 
 ```bat
