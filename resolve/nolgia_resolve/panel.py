@@ -22,6 +22,9 @@ TICK_MS = 100
 MAX_CODE_CHARS = 200000
 FOOTER = "NOLGIA works in this DaVinci Resolve while this window is open and Connected is on."
 
+# The open window, for nolgia_resolve.close_window().
+current = None
+
 
 def find_open_window(fusion):
     """The NOLGIA window when it is already open (the script runs again)."""
@@ -50,6 +53,8 @@ class Panel:
         self._activity_drawn = -1
         self._closed = False
         self._ticks = 0
+        global current
+        current = self
 
     # ------------------------------------------------------------- layout
 
@@ -148,6 +153,10 @@ class Panel:
             self.controller.disconnect()
         else:
             self.controller.connect()
+
+    def close(self):
+        """Close the window, as its close button does."""
+        self._on_close(None)
 
     def _on_close(self, ev):
         if self._closed:

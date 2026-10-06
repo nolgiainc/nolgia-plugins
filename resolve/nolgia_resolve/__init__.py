@@ -15,7 +15,7 @@ runs commands until switched off:
 
 from .core import PLUGIN_VERSION
 
-__all__ = ["PLUGIN_VERSION", "open_window", "serve", "connect", "disconnect", "status"]
+__all__ = ["PLUGIN_VERSION", "open_window", "close_window", "serve", "connect", "disconnect", "status"]
 
 
 def open_window(resolve, fusion, bmd):
@@ -32,6 +32,18 @@ def open_window(resolve, fusion, bmd):
             pass
         return False
     return panel.Panel(resolve, fusion, bmd).run()
+
+
+def close_window():
+    """Close the NOLGIA window (which switches NOLGIA off), as its close
+    button does. From `run` code the window closes once the command is done."""
+    from . import panel
+
+    if panel.current is None or panel.current._closed:
+        return False
+    win = panel.current
+    win.controller.events.put(win.close)
+    return True
 
 
 def serve(resolve=None):

@@ -187,6 +187,14 @@ class PanelTest(unittest.TestCase):
         self.assertFalse(nolgia_resolve.open_window(None, self.fusion, self.bmd))
         self.assertEqual(len(self.bmd.dispatchers), 1, "a second window was made")
 
+    def test_close_window_from_run_code(self):
+        self.sign_in()
+        cid = self.command("run", {"code": "import nolgia_resolve\nresult = nolgia_resolve.close_window()"})
+        self.tick_until(lambda: self.disp.exited)
+        self.assertEqual(self.status_of(cid)["status"], "succeeded")
+        self.assertIs(self.status_of(cid)["result"]["value"], True)
+        self.assertIsNone(self.controller.worker)
+
 
 if __name__ == "__main__":
     unittest.main()
