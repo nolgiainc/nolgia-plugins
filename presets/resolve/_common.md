@@ -147,11 +147,12 @@ returns the traceback.
   `media_pool.ImportMedia()` answers None. `nolgia_app_info` shows `page:
   null` then; ask the person to open or create a project (or use the plugin's
   `open` command, which works from that state).
-- `project.ExportCurrentFrameAsStill(path)` answers False in a fresh Resolve
-  session until the Color page has been shown once. `nolgia_app_preview`
-  handles it (it shows the Color page for a moment and comes back). In your
-  own code, `resolve.OpenPage("color")`, go back to the page you read first,
-  and try again.
+- `project.ExportCurrentFrameAsStill(path)` has been seen to answer False on
+  a fresh Resolve session (once, during a long session of imports and
+  renders; six fresh sessions since exported their first still fine). When it
+  does, `nolgia_app_preview` shows the Color page for a moment, comes back and
+  tries again. In your own code do the same: `resolve.OpenPage("color")`, go
+  back to the page you read first, and try again.
 - A long `run` holds the NOLGIA window until it ends. Keep runs short and set
   `timeout_seconds` for anything that may take a while. A dialog open in
   Resolve (a missing media prompt, a question about a project) holds every
