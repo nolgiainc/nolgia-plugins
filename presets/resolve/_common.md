@@ -9,7 +9,7 @@ Resolve's own Python). Code for `nolgia_app_run` is Python.
 The plugin needs DaVinci Resolve Studio 21.1 or later: since 21.1 Resolve runs
 Python scripts only in the Studio edition. When the plugin is started from
 outside Resolve (a render machine, a script), Resolve must also have
-Preferences > System > General > External scripting using set to Local.
+Preferences > System > General > External scripting set to Local.
 
 Code in `nolgia_app_run` sees `resolve` (the Resolve object), `project_manager`,
 `project` (the open project), `media_pool`, `timeline` (the current timeline,
@@ -21,9 +21,9 @@ returns the traceback.
 
 1. Call `nolgia_app_status`. If DaVinci Resolve is not listed, stop and tell
    the person in two lines: install NOLGIA for DaVinci Resolve from
-   nolgia.ai/plugins/resolve (DaVinci Resolve Studio 21.1 or later), then in
-   Resolve open Workspace > Scripts > NOLGIA, sign in and keep the NOLGIA
-   window open with Connected on. Do not guess or continue without it.
+   nolgia.ai/plugins/davinci-resolve (DaVinci Resolve Studio 21.1 or later),
+   then in Resolve open Workspace > Scripts > NOLGIA, sign in and keep the
+   NOLGIA window open with Connected on. Do not guess or continue without it.
 2. Call `nolgia_app_info`. Read what is really open: Resolve's version and
    edition, the current page, the project, the current timeline (name, frame
    rate, frame size, start timecode, length, tracks with their clip counts,
@@ -147,16 +147,17 @@ returns the traceback.
 - Missing shots, stills, music and sound: make them with `nolgia_text_to_video`,
   `nolgia_image_to_video`, `nolgia_text_to_image` or `nolgia_text_to_audio` and
   bring them in with `nolgia_app_import` (into the `NOLGIA imports` bin, or a
-  bin you name with `bin`; `append: true` puts them on the end of the current
-  timeline).
+  bin you name with `bin`; `asset_ids` takes up to 100 at a time, in order;
+  `append: true` puts them on the end of the current timeline).
 - These generations cost credits: say what you are about to make and roughly
   what it costs (read it from the tool's estimate) before you run it. Work in
   Resolve itself, previews and renders included, is free.
 
 ## Finishing
 
-1. Save the project (`nolgia_app_save`); it saves the open project under its
-   own name. Never switch projects (`nolgia_app_open`) to save.
+1. Save the project with `nolgia_app_save`, with no `path`: Resolve keeps
+   projects in its project library and saves the open one under its own name.
+   Never switch projects (`nolgia_app_open`) to save.
 2. Export a preview with `nolgia_app_export` (`png` for a still, `mp4` for
    motion) so the person has it in their NOLGIA library, and show the still.
 3. Leave nothing behind in the render queue, and tell the person, in a few

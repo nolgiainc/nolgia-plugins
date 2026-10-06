@@ -53,8 +53,9 @@ first frame to look at. Their existing timelines are never touched.
    it is not there yet), and answers `imported` (names, in order), `assets`
    (asset id, name and kind for each) and `skipped` (what Resolve does not
    import, such as 3D models). For an order the person gave, or a project of
-   more than 200 assets, use `asset_ids` with the ids in that order instead.
-   Keep the `assets` list: it is the order of the cut.
+   more than 200 assets, use `asset_ids` with the ids in that order instead
+   (up to 100 per call; a longer list goes in several calls, in order). Keep
+   the `assets` list: it is the order of the cut.
 3. **Read the clips.** One `nolgia_app_run` over the bin's clips
    (`bin.GetClipList()`, matched to the imported names with `GetName()`):
    `GetClipProperty()` gives `Type` (`Video`, `Video + Audio`, `Audio`, or a
