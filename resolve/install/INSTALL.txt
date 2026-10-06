@@ -1,0 +1,32 @@
+NOLGIA for DaVinci Resolve {version}
+
+Lets your NOLGIA agent work in DaVinci Resolve Studio 21.1 or newer (Resolve
+runs scripts only in the Studio edition since 21.1).
+
+Install
+1. Quit DaVinci Resolve.
+2. Run the installer for your system. It copies two files into Resolve's
+   Scripts folder for your user, so it needs no administrator rights:
+     Windows: double-click install-windows.cmd
+     macOS:   double-click install-macos.command (or run it in Terminal)
+     Linux:   sh install-linux.sh
+   Or copy NOLGIA.py and nolgia_resolve.zip from the Utility folder here into
+   this folder yourself (make it if it is not there):
+     Windows: %APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility
+     macOS:   ~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Utility
+     Linux:   ~/.local/share/DaVinciResolve/Fusion/Scripts/Utility
+3. Start DaVinci Resolve and open Workspace > Scripts > NOLGIA.
+4. Click Sign in. Your browser opens a NOLGIA page; check that the code
+   matches the one in the NOLGIA window and approve it.
+5. Keep the NOLGIA window open with Connected on, and ask your agent to work
+   in DaVinci Resolve. Each command shows up in the Activity list. Click
+   Pause, turn Connected off or close the window to stop at any time.
+
+Update: install the new version the same way, then restart DaVinci Resolve.
+
+Remove: delete NOLGIA.py and nolgia_resolve.zip from that Utility folder.
+Your sign in and settings are kept in %APPDATA%\NOLGIA\resolve (macOS:
+~/Library/Application Support/NOLGIA/resolve, Linux: ~/.config/nolgia/resolve);
+delete that folder too to forget them.
+
+More: https://nolgia.ai/plugins/resolve
