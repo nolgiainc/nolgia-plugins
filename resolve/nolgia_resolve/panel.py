@@ -85,7 +85,8 @@ class Panel:
                       "MinimumSize": [0, STATUS_LINES_PX], "Alignment": {"AlignTop": True, "AlignLeft": True}}),
             ui.Label({"ID": "Account", "Text": "", "WordWrap": True, "Weight": 0}),
             ui.Label({"ID": "Code", "Text": "", "Weight": 0, "Font": big, "Alignment": {"AlignHCenter": True}}),
-            ui.Label({"ID": "CodeHint", "Text": "", "WordWrap": True, "Weight": 0}),
+            ui.Label({"ID": "CodeHint", "Text": "", "WordWrap": True, "Weight": 0,
+                      "MinimumSize": [0, FOOTER_LINES_PX], "Alignment": {"AlignTop": True, "AlignLeft": True}}),
             ui.HGroup({"Weight": 0}, [
                 ui.Button({"ID": "SignIn", "Text": "Sign in"}),
                 ui.Button({"ID": "OpenPage", "Text": "Open page again"}),

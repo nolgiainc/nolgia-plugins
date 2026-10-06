@@ -81,7 +81,7 @@ class PanelTest(unittest.TestCase):
         # two wrapping labels have two lines of height (a long retry message
         # once spilled over the title bar in a 230 px wide window).
         self.assertGreaterEqual(self.win.props["MinimumSize"][0], 400)
-        for element_id in ("Status", "Footer"):
+        for element_id in ("Status", "CodeHint", "Footer"):
             self.assertTrue(self.item(element_id).props["WordWrap"], element_id)
             self.assertGreaterEqual(self.item(element_id).props["MinimumSize"][1], 32, element_id)
             self.assertTrue(self.item(element_id).props["Alignment"]["AlignTop"], element_id)
