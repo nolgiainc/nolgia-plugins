@@ -16,6 +16,7 @@ keeps answering clicks while Resolve renders.
 import os
 import platform
 import queue
+import sys
 import threading
 import time
 import traceback
@@ -33,6 +34,37 @@ from .core.worker import BridgeWorker, Status
 from .settings import Log, Settings
 
 _TRUE = ("1", "true", "yes", "on")
+
+
+CA_BUNDLES = (
+    "/etc/ssl/cert.pem",                      # macOS, Alpine
+    "/etc/ssl/certs/ca-certificates.crt",     # Debian, Ubuntu
+    "/etc/pki/tls/certs/ca-bundle.crt",       # Fedora, RHEL, Rocky
+    "/etc/ssl/ca-bundle.pem",                 # openSUSE
+)
+
+
+def ensure_ca_certificates(env=None):
+    """Resolve's own Python has no certifi, and on macOS and Linux its
+    OpenSSL may look for certificates where there are none. Point it at the
+    system's bundle then (Windows uses its own certificate store)."""
+    env = os.environ if env is None else env
+    if sys.platform.startswith("win") or env.get("SSL_CERT_FILE") or env.get("SSL_CERT_DIR"):
+        return None
+    try:
+        import ssl
+
+        paths_ = ssl.get_default_verify_paths()
+        if (paths_.cafile and os.path.isfile(paths_.cafile)) or (paths_.capath and os.path.isdir(paths_.capath)
+                                                                    and os.listdir(paths_.capath)):
+            return None
+    except Exception:
+        pass
+    for bundle in CA_BUNDLES:
+        if os.path.isfile(bundle):
+            env["SSL_CERT_FILE"] = bundle
+            return bundle
+    return None
 
 
 def env_flag(name, env=None):
@@ -57,6 +89,7 @@ current = None
 class Controller:
     def __init__(self, resolve, settings=None, log=None, has_window=False, env=None, open_url=None):
         self.env = os.environ if env is None else env
+        ensure_ca_certificates()
         self.config_dir = paths.config_dir(env=self.env)
         self.settings = settings or Settings(self.config_dir)
         self.log = log or Log(self.config_dir)

@@ -103,3 +103,28 @@ class Paths(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Certificates(unittest.TestCase):
+    def test_points_openssl_at_the_system_bundle_only_when_needed(self):
+        import ssl
+        from unittest import mock
+
+        from nolgia_resolve import runtime
+
+        missing = ssl.DefaultVerifyPaths(None, None, "SSL_CERT_FILE", "/nope/cert.pem", "SSL_CERT_DIR", "/nope/certs")
+        with mock.patch.object(sys_module(), "platform", "darwin"), \
+                mock.patch("ssl.get_default_verify_paths", return_value=missing), \
+                mock.patch("os.path.isfile", side_effect=lambda p: p == "/etc/ssl/cert.pem"):
+            env = {}
+            self.assertEqual(runtime.ensure_ca_certificates(env), "/etc/ssl/cert.pem")
+            self.assertEqual(env, {"SSL_CERT_FILE": "/etc/ssl/cert.pem"})
+            self.assertIsNone(runtime.ensure_ca_certificates({"SSL_CERT_FILE": "/mine.pem"}))
+        with mock.patch.object(sys_module(), "platform", "win32"):
+            self.assertIsNone(runtime.ensure_ca_certificates({}))
+
+
+def sys_module():
+    import sys
+
+    return sys
