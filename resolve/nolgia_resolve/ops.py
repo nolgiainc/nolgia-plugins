@@ -653,43 +653,71 @@ class Ops:
         return folder
 
     def do_import_asset(self, args, prepared, command):
-        if prepared["kind"] == "lut":
-            return self.install_lut(args, prepared)
-        if args.get("apply_to"):
-            raise CommandError("`apply_to` is for LUTs; this asset is %s." % prepared["kind"])
+        items = prepared["items"] if "items" in prepared else [prepared]
+        luts = [i for i in items if i["kind"] == "lut"]
+        if args.get("apply_to") and not (len(items) == 1 and luts):
+            raise CommandError("`apply_to` is for a single LUT (a color_preset or one .cube file); "
+                               "this import has %s." % _describe(items))
+        if len(items) == 1 and luts:
+            result = self.install_lut(args, luts[0])
+            if luts[0].get("asset_id"):
+                result["asset_ids"] = [luts[0]["asset_id"]]
+            return result
         project = self.project()
         pool = call(project, "GetMediaPool")
-        path = prepared["path"]
         bin_name = args.get("bin") or IMPORT_BIN
-        folder = self.import_bin(pool, bin_name)
+        folder = self.import_bin(pool, bin_name) if len(luts) < len(items) else None
+        entries, clips = [], []
+        for item in items:
+            if item["kind"] == "lut":
+                lut = self.install_lut({}, item)
+                entries.append({"asset_id": item.get("asset_id"), "name": lut["imported"][0], "kind": "lut",
+                                "path": lut["path"], "lut": lut["lut"]})
+                continue
+            found, already = self.import_file(pool, folder, item["path"])
+            entry = {"asset_id": item.get("asset_id"), "name": call(found[0], "GetName"), "kind": item["kind"],
+                     "path": item["path"]}
+            if already:
+                entry["already_in_bin"] = True
+            entries.append(entry)
+            clips += found
+        self.changed = True
+        kinds = sorted({e["kind"] for e in entries})
+        result = {
+            "imported": [e["name"] for e in entries],
+            "asset_ids": [e["asset_id"] for e in entries],
+            "assets": entries,
+            "kind": kinds[0] if len(kinds) == 1 else "mixed",
+            "bin": bin_name,
+        }
+        if len(entries) == 1:
+            result["path"] = entries[0]["path"]
+            if entries[0].get("already_in_bin"):
+                result["already_in_bin"] = True
+        if prepared.get("skipped"):
+            result["skipped"] = prepared["skipped"]
+        if args.get("append") and clips:
+            result["appended"] = self.append(project, pool, clips)
+        return result
+
+    def import_file(self, pool, folder, path):
+        """Import one file into `folder`. Returns (clips, was_already_there)."""
         before = call(pool, "GetCurrentFolder")
         try:
             call(pool, "SetCurrentFolder", folder)
-            items = call(pool, "ImportMedia", [{"FilePath": path}], default=[]) or []
-            if not items:
-                items = call(pool, "ImportMedia", [path], default=[]) or []
+            found = call(pool, "ImportMedia", [{"FilePath": path}], default=[]) or []
+            if not found:
+                found = call(pool, "ImportMedia", [path], default=[]) or []
         finally:
             if before is not None:
                 call(pool, "SetCurrentFolder", before)
-        already = False
-        if not items:  # the file may be in the bin already
-            items = [c for c in call(folder, "GetClipList", default=[]) or []
-                     if _same_path(call(c, "GetClipProperty", "File Path"), path)]
-            already = bool(items)
-        if not items:
+        if found:
+            return found, False
+        found = [c for c in call(folder, "GetClipList", default=[]) or []
+                 if _same_path(call(c, "GetClipProperty", "File Path"), path)]
+        if not found:
             raise CommandError("DaVinci Resolve did not import %s." % os.path.basename(path))
-        self.changed = True
-        result = {
-            "imported": [call(i, "GetName") for i in items],
-            "kind": prepared["kind"],
-            "bin": bin_name,
-            "path": path,
-        }
-        if already:
-            result["already_in_bin"] = True
-        if args.get("append"):
-            result["appended"] = self.append(project, pool, items)
-        return result
+        return found[:1], True
 
     def append(self, project, pool, items):
         tl = call(project, "GetCurrentTimeline")
@@ -700,7 +728,7 @@ class Ops:
                 name, n = "%s %d" % (NEW_TIMELINE_NAME, n), n + 1
             tl = call(pool, "CreateTimelineFromClips", name, [{"mediaPoolItem": i} for i in items])
             if tl is None:
-                raise CommandError("DaVinci Resolve did not make a timeline from the clip.")
+                raise CommandError("DaVinci Resolve did not make a timeline from the clips.")
             call(project, "SetCurrentTimeline", tl)
             facts = self.timeline_facts(tl)
             added = []
@@ -710,7 +738,7 @@ class Ops:
             return {"timeline": name, "new_timeline": True, "items": [self.item_info(i, facts) for i in added]}
         added = call(pool, "AppendToTimeline", [{"mediaPoolItem": i} for i in items], default=[]) or []
         if not added:
-            raise CommandError("DaVinci Resolve did not add the clip to the timeline %s." % call(tl, "GetName"))
+            raise CommandError("DaVinci Resolve did not add the clips to the timeline %s." % call(tl, "GetName"))
         facts = self.timeline_facts(tl)
         return {"timeline": call(tl, "GetName"), "new_timeline": False,
                 "items": [self.item_info(i, facts) for i in added]}
@@ -813,18 +841,77 @@ class Ops:
 # ------------------------------------------------------------ worker side
 
 
+MAX_PROJECT_ASSETS = 200
+
+
 def prepare_import(command, api, snapshot, log=lambda m: None):
-    """Worker thread: fetch the file or the color preset. No Resolve here."""
+    """Worker thread: fetch the files or the color preset, in order. No
+    Resolve here. Returns {"items": [...], "skipped": [...]}."""
     args = command.args
     if args.get("color_preset"):
-        return _prepare_color_preset(args["color_preset"], api)
-    asset_id = args["asset_id"]
+        return {"items": [_prepare_color_preset(args["color_preset"], api)], "skipped": []}
+    skipped = []
+    if args.get("project_id"):
+        listed, skipped = _project_assets(args["project_id"], api)
+        wanted = [(a["id"], a) for a in listed]
+    else:
+        wanted = [(i, None) for i in (args.get("asset_ids") or [args["asset_id"]])]
+    items = []
     try:
-        asset = api.get_asset(asset_id)
-    except ApiError as err:
-        if err.status == 404:
-            raise CommandError("NOLGIA has no asset %s in this account." % asset_id) from None
+        for asset_id, asset in wanted:
+            items.append(_prepare_asset(asset_id, api, snapshot, asset))
+    except BaseException:
+        for item in items:
+            if item.get("temp_dir"):
+                shutil.rmtree(item["temp_dir"], ignore_errors=True)
         raise
+    return {"items": items, "skipped": skipped}
+
+
+def _project_assets(project_id, api):
+    """The project's ready assets, oldest first: (media, skipped)."""
+    media, skipped, cursor = [], [], None
+    while True:
+        query = {"project_id": project_id, "sort": "created_at_asc", "limit": 100}
+        if cursor:
+            query["cursor"] = cursor
+        try:
+            page = api.request("GET", "/assets", query=query, timeout=60).json() or {}
+        except ApiError as err:
+            if err.status in (400, 404):
+                raise CommandError("NOLGIA has no project %s in this account (%s)."
+                                   % (project_id, err.detail or err.title or err.status)) from None
+            raise
+        if not cursor and (page.get("total") or 0) > MAX_PROJECT_ASSETS:
+            raise CommandError("The project has %d assets; import at most %d at a time (use asset_ids)."
+                               % (page["total"], MAX_PROJECT_ASSETS))
+        for asset in page.get("items") or []:
+            if asset.get("status", "ready") != "ready":
+                continue
+            if asset.get("modality") in MEDIA_KINDS:
+                media.append(asset)
+            else:
+                skipped.append({"asset_id": asset.get("id"), "name": asset.get("display_name") or "",
+                                "why": "DaVinci Resolve does not import %s assets" % (asset.get("modality") or "these")})
+        cursor = page.get("next_cursor")
+        if not cursor:
+            break
+        if len(media) + len(skipped) > MAX_PROJECT_ASSETS:
+            raise CommandError("The project has more than %d assets; import at most %d at a time (use asset_ids)."
+                               % (MAX_PROJECT_ASSETS, MAX_PROJECT_ASSETS))
+    if not media:
+        raise CommandError("The NOLGIA project %s has no ready video, image or audio assets." % project_id)
+    return media, skipped
+
+
+def _prepare_asset(asset_id, api, snapshot, asset=None):
+    if not (asset or {}).get("signed_url"):
+        try:
+            asset = api.get_asset(asset_id)
+        except ApiError as err:
+            if err.status == 404:
+                raise CommandError("NOLGIA has no asset %s in this account." % asset_id) from None
+            raise
     url = (asset or {}).get("signed_url")
     if not url:
         raise CommandError("NOLGIA did not give a download link for asset %s." % asset_id)
@@ -845,8 +932,8 @@ def prepare_import(command, api, snapshot, log=lambda m: None):
         kind = util.IMPORT_KINDS.get(ext)
         if kind not in MEDIA_KINDS:
             raise CommandError(
-                "DaVinci Resolve cannot import this file type (%s). It imports images, video, audio and "
-                ".cube LUTs from NOLGIA." % (asset.get("mime_type") or ext or "unknown"))
+                "DaVinci Resolve cannot import %s (%s). It imports images, video, audio and .cube LUTs from "
+                "NOLGIA." % (name, asset.get("mime_type") or ext or "unknown type"))
         filename = util.safe_filename(os.path.splitext(name)[0], asset_id) + ext
         project = util.safe_filename((snapshot or {}).get("document", {}).get("name") or "", "Untitled Project")
         folder = os.path.join(paths.import_dir(), project, util.safe_filename(asset_id))
@@ -860,6 +947,13 @@ def prepare_import(command, api, snapshot, log=lambda m: None):
         if not keep_temp:
             shutil.rmtree(temp_dir, ignore_errors=True)
     return {"kind": kind, "path": final, "ext": ext, "asset_id": asset_id}
+
+
+def _describe(items):
+    kinds = [i["kind"] for i in items]
+    if len(kinds) == 1:
+        return "one %s" % kinds[0]
+    return "%d files" % len(kinds)
 
 
 def _prepare_color_preset(slug, api):

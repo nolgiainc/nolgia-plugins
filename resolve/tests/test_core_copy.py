@@ -33,7 +33,7 @@ PER_APP_COMMANDS = {
     # both, with different values
     "EXPORT_FORMATS",
     # DaVinci Resolve
-    "LUT_TARGETS", "_bool", "_timecode", "_slug",
+    "LUT_TARGETS", "_bool", "_timecode", "_slug", "_ids",
 }
 
 

@@ -132,8 +132,10 @@ class Timeline(PyRemoteObject):
         return item
 
     def append_clip(self, clip):
+        # Resolve appends to the end of the first track of the clip's kind.
         kind = "audio" if clip.kind == "audio" else "video"
-        end = self.GetEndFrame()
+        track = self.tracks[kind][0] if self.tracks[kind] else []
+        end = max([i.end for i in track] or [self.start])
         item = TimelineItem(clip.name, end, end + clip.frames, kind, 1, clip)
         return self.add(item)
 

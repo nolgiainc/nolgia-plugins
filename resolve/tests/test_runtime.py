@@ -171,6 +171,38 @@ class ServeTest(unittest.TestCase):
         self.assertTrue(storage)
         self.assertFalse(any(r["auth"] for r in storage), "token sent to a signed URL")
 
+    def test_several_assets_and_a_project_in_order(self):
+        self.start()
+        project = "0d6c7a52-5f1e-4c55-9a52-0f6e4c3b2a10"
+
+        def seed(name, ctype, data, in_project=True):
+            url = "/mock/assets?filename=%s&content_type=%s" % (name, ctype)
+            if in_project:
+                url += "&project_id=" + project
+            return support.call(self.server, "POST", url, data, token=None)[1]["id"]
+
+        clip = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 32
+        first = seed("shot-1.mp4", "video/mp4", clip)
+        model = seed("chair.glb", "model/gltf-binary", b"glTF" + b"\x00" * 20)
+        second = seed("shot-2.png", "image/png", fake.make_bmp(1, 1))
+        loose = seed("loose.mp4", "video/mp4", clip, in_project=False)
+
+        res = self.ok("import_asset", {"asset_ids": [second, loose, first], "bin": "Selects", "append": True})
+        self.assertEqual(res["asset_ids"], [second, loose, first])
+        self.assertEqual(res["imported"], ["shot-2.png", "loose.mp4", "shot-1.mp4"])
+        self.assertEqual([i["name"] for i in res["appended"]["items"]], ["shot-2.png", "loose.mp4", "shot-1.mp4"])
+
+        res = self.ok("import_asset", {"project_id": project, "bin": "Project cut"})
+        self.assertEqual(res["asset_ids"], [first, second], "oldest first, video and images only")
+        self.assertEqual(res["skipped"], [{"asset_id": model, "name": "chair.glb",
+                                           "why": "DaVinci Resolve does not import 3d assets"}])
+        listed = [r for r in self.state()["requests"] if r["path"] == "/v1/assets"]
+        self.assertTrue(listed and all(r["auth"] for r in listed))
+
+        bad = self.command("import_asset", {"asset_ids": [first, "00000000-0000-4000-8000-000000000000"]})
+        self.assertEqual(bad["status"], "failed")
+        self.assertIn("no asset 00000000-0000-4000-8000-000000000000", bad["error"])
+
     def test_open_refused_headless_after_unsaved_changes(self):
         self.start()
         self.h.resolve.pm.add("Other")

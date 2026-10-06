@@ -7,9 +7,8 @@ Install
 1. Quit DaVinci Resolve.
 2. Run the installer for your system. It copies two files into Resolve's
    Scripts folder for your user, so it needs no administrator rights:
-     Windows: double-click install-windows.cmd
-     macOS:   double-click install-macos.command (or run it in Terminal)
-     Linux:   sh install-linux.sh
+     Windows:        double-click install.cmd
+     macOS, Linux:   in Terminal, run  sh install.sh  in this folder
    Or copy NOLGIA.py and nolgia_resolve.zip from the Utility folder here into
    this folder yourself (make it if it is not there):
      Windows: %APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Utility

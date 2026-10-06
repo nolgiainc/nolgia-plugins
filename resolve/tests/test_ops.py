@@ -336,14 +336,17 @@ class ImportMedia(Base):
 
     def test_imports_into_the_nolgia_bin(self):
         path = self.media()
-        res = self.do("import_asset", {"asset_id": "a1"}, {"kind": "video", "path": path})
-        self.assertEqual(res, {"imported": ["clip.mov"], "kind": "video", "bin": "NOLGIA imports", "path": path})
+        res = self.do("import_asset", {"asset_id": "a1"}, {"items": [{"kind": "video", "path": path, "asset_id": "a1"}]})
+        self.assertEqual(res, {"imported": ["clip.mov"], "asset_ids": ["a1"], "kind": "video", "bin": "NOLGIA imports",
+                               "path": path, "assets": [{"asset_id": "a1", "name": "clip.mov", "kind": "video",
+                                                         "path": path}]})
         bins = [f.name for f in self.project.pool.root.folders]
         self.assertIn("NOLGIA imports", bins)
         self.assertIs(self.project.pool.current, self.project.pool.root, "current bin not put back")
         self.assertTrue(self.ops.changed)
-        again = self.do("import_asset", {"asset_id": "a1"}, {"kind": "video", "path": path})
+        again = self.do("import_asset", {"asset_id": "a1"}, {"kind": "video", "path": path, "asset_id": "a1"})
         self.assertTrue(again["already_in_bin"])
+        self.assertTrue(again["assets"][0]["already_in_bin"])
         self.assertEqual(bins.count("NOLGIA imports"), 1)
 
     def test_append_to_the_current_timeline(self):
@@ -365,8 +368,45 @@ class ImportMedia(Base):
         self.assertEqual(res["appended"]["items"][0]["track"], "A1")
 
     def test_apply_to_is_for_luts(self):
-        with self.assertRaisesRegex(CommandError, "for LUTs"):
+        with self.assertRaisesRegex(CommandError, "for a single LUT"):
             self.do("import_asset", {"asset_id": "a1", "apply_to": "all"}, {"kind": "video", "path": self.media()})
+
+    def test_several_in_order_then_appended_in_order(self):
+        paths = [self.media(n) for n in ("c.mov", "a.png", "b.wav", "d.mov")]
+        kinds = ["video", "image", "audio", "video"]
+        prepared = {"items": [{"kind": k, "path": p, "asset_id": "id-%d" % n}
+                              for n, (k, p) in enumerate(zip(kinds, paths))]}
+        res = self.do("import_asset", {"asset_ids": ["id-0", "id-1", "id-2", "id-3"], "append": True,
+                                       "bin": "Cut"}, prepared)
+        self.assertEqual(res["imported"], ["c.mov", "a.png", "b.wav", "d.mov"])
+        self.assertEqual(res["asset_ids"], ["id-0", "id-1", "id-2", "id-3"])
+        self.assertEqual(res["kind"], "mixed")
+        self.assertEqual(res["bin"], "Cut")
+        self.assertNotIn("path", res)
+        bin_ = [f for f in self.project.pool.root.folders if f.name == "Cut"][0]
+        self.assertEqual([c.name for c in bin_.clips], ["c.mov", "a.png", "b.wav", "d.mov"])
+        items = res["appended"]["items"]
+        self.assertEqual([i["name"] for i in items], ["c.mov", "a.png", "b.wav", "d.mov"])
+        video = [i for i in items if i["track"] == "V1"]
+        self.assertEqual([i["start_frame"] for i in video], [96, 144, 264])
+        self.assertEqual([i["track"] for i in items], ["V1", "V1", "A1", "V1"])
+
+    def test_skipped_and_luts_in_a_list(self):
+        cube_dir = tempfile.mkdtemp(dir=self.tmp)
+        cube = os.path.join(cube_dir, "download")
+        with open(cube, "wb") as handle:
+            handle.write(b"LUT_3D_SIZE 2\n" + b"0 0 0\n" * 8)
+        prepared = {"items": [{"kind": "video", "path": self.media(), "asset_id": "v"},
+                              {"kind": "lut", "path": cube, "filename": "Look.cube", "temp_dir": cube_dir,
+                               "asset_id": "l"}],
+                    "skipped": [{"asset_id": "m", "name": "chair", "why": "DaVinci Resolve does not import 3d assets"}]}
+        res = self.do("import_asset", {"project_id": "p", "append": True}, prepared)
+        self.assertEqual([a["kind"] for a in res["assets"]], ["video", "lut"])
+        self.assertEqual(res["assets"][1]["lut"], "NOLGIA/Look.cube")
+        self.assertEqual(res["skipped"][0]["asset_id"], "m")
+        self.assertEqual([i["name"] for i in res["appended"]["items"]], ["clip.mov"])
+        with self.assertRaisesRegex(CommandError, "single LUT"):
+            self.do("import_asset", {"project_id": "p", "apply_to": "all"}, prepared)
 
 
 class Luts(Base):
@@ -393,7 +433,8 @@ class Luts(Base):
         self.assertEqual(self.do("import_asset", {"color_preset": "kodak-portra-400"}, prepared)["path"], target)
 
     def test_a_library_lut_never_replaces_another(self):
-        first = self.do("import_asset", {"asset_id": "a"}, self.cube())
+        first = self.do("import_asset", {"asset_id": "a"}, dict(self.cube(), asset_id="a"))
+        self.assertEqual(first["asset_ids"], ["a"])
         second = self.do("import_asset", {"asset_id": "b"}, self.cube(text=b"LUT_3D_SIZE 2\n" + b"1 0 0\n" * 8))
         self.assertTrue(second["path"].endswith("look 2.cube"), second["path"])
         same = self.do("import_asset", {"asset_id": "a"}, self.cube())
@@ -448,17 +489,30 @@ class PrepareImport(unittest.TestCase):
         self.env.stop()
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def api(self, asset, data):
+    def api(self, asset, data, pages=None):
+        class Response:
+            def __init__(self, body):
+                self.body = body
+
+            def json(self):
+                return self.body
+
         class Api:
             base_url = "http://mock/v1"
+            queries = []
 
             def get_asset(self, asset_id):
-                return asset
+                return dict(asset, id=asset_id)
 
             def download(self, url, dest):
                 with open(dest, "wb") as handle:
-                    handle.write(data)
-                return data[:64]
+                    handle.write(data(url) if callable(data) else data)
+                with open(dest, "rb") as handle:
+                    return handle.read(64)
+
+            def request(self, method, path, query=None, timeout=None):
+                Api.queries.append((path, dict(query or {})))
+                return Response(pages[(query or {}).get("cursor")])
 
         return Api()
 
@@ -466,23 +520,62 @@ class PrepareImport(unittest.TestCase):
         asset = {"signed_url": "u", "display_name": "Rooftop/clip.mp4", "mime_type": "video/mp4", "size_bytes": 12}
         cmd = command("import_asset", {"asset_id": "a-1"})
         out = ops_module.prepare_import(cmd, self.api(asset, b"\x00\x00\x00\x18ftypmp42"), {"document": {"name": "My: Film"}})
-        self.assertEqual(out["kind"], "video")
-        self.assertEqual(out["path"], os.path.join(self.tmp, "imports", "My_ Film", "a-1", "clip.mp4"))
-        self.assertTrue(os.path.isfile(out["path"]))
+        item = out["items"][0]
+        self.assertEqual(item["kind"], "video")
+        self.assertEqual(item["path"], os.path.join(self.tmp, "imports", "My_ Film", "a-1", "clip.mp4"))
+        self.assertTrue(os.path.isfile(item["path"]))
 
     def test_cube_by_name_or_content(self):
         cube = b'TITLE "Warm"\nLUT_3D_SIZE 2\n' + b"0 0 0\n" * 8
         for name in ("Warm look.cube", "warm.txt"):
             asset = {"signed_url": "u", "display_name": name, "mime_type": "text/plain", "size_bytes": len(cube)}
             out = ops_module.prepare_import(command("import_asset", {"asset_id": "a"}), self.api(asset, cube), {})
-            self.assertEqual(out["kind"], "lut")
-            self.assertTrue(out["filename"].endswith(".cube"))
-            shutil.rmtree(out["temp_dir"])
+            item = out["items"][0]
+            self.assertEqual(item["kind"], "lut")
+            self.assertTrue(item["filename"].endswith(".cube"))
+            shutil.rmtree(item["temp_dir"])
 
     def test_models_are_refused(self):
         asset = {"signed_url": "u", "display_name": "chair.glb", "mime_type": "model/gltf-binary"}
-        with self.assertRaisesRegex(CommandError, "cannot import this file type"):
+        with self.assertRaisesRegex(CommandError, "cannot import chair.glb"):
             ops_module.prepare_import(command("import_asset", {"asset_id": "a"}), self.api(asset, b"glTF...."), {})
+
+    def test_asset_ids_in_order(self):
+        asset = {"signed_url": "u", "mime_type": "image/png", "display_name": "x.png"}
+        png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 20
+        out = ops_module.prepare_import(command("import_asset", {"asset_ids": ["z", "a", "m"]}),
+                                        self.api(asset, png), {})
+        self.assertEqual([i["asset_id"] for i in out["items"]], ["z", "a", "m"])
+        self.assertEqual(out["skipped"], [])
+
+    def test_project_assets_oldest_first_across_pages(self):
+        def asset(i, modality, mime, name):
+            return {"id": "p%d" % i, "modality": modality, "mime_type": mime, "display_name": name,
+                    "signed_url": "url-%d" % i, "status": "ready"}
+
+        pages = {
+            None: {"items": [asset(1, "video", "video/mp4", "first.mp4"), asset(2, "3d", "model/gltf-binary", "chair.glb")],
+                   "next_cursor": "c2", "total": 4},
+            "c2": {"items": [asset(3, "image", "image/png", "third.png"), asset(4, "audio", "audio/wav", "fourth.wav")],
+                   "next_cursor": None, "total": 4},
+        }
+        heads = {"url-1": b"\x00\x00\x00\x18ftypmp42", "url-3": b"\x89PNG\r\n\x1a\n", "url-4": b"RIFF\x00\x00\x00\x00WAVE"}
+        api = self.api({}, lambda url: heads[url], pages)
+        out = ops_module.prepare_import(command("import_asset", {"project_id": "proj-1"}), api, {})
+        self.assertEqual([i["asset_id"] for i in out["items"]], ["p1", "p3", "p4"])
+        self.assertEqual([i["kind"] for i in out["items"]], ["video", "image", "audio"])
+        self.assertEqual(out["skipped"], [{"asset_id": "p2", "name": "chair.glb",
+                                           "why": "DaVinci Resolve does not import 3d assets"}])
+        self.assertEqual(api.queries[0], ("/assets", {"project_id": "proj-1", "sort": "created_at_asc", "limit": 100}))
+        self.assertEqual(api.queries[1][1]["cursor"], "c2")
+
+    def test_empty_or_huge_project(self):
+        api = self.api({}, b"", {None: {"items": [], "next_cursor": None, "total": 0}})
+        with self.assertRaisesRegex(CommandError, "no ready video, image or audio"):
+            ops_module.prepare_import(command("import_asset", {"project_id": "p"}), api, {})
+        api = self.api({}, b"", {None: {"items": [], "next_cursor": "x", "total": 500}})
+        with self.assertRaisesRegex(CommandError, "has 500 assets"):
+            ops_module.prepare_import(command("import_asset", {"project_id": "p"}), api, {})
 
 
 class Helpers(unittest.TestCase):

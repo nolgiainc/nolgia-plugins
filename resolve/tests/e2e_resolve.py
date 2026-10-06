@@ -324,9 +324,11 @@ class Caller:
         assert status == 200, status
         return data
 
-    def seed_asset(self, filename, content_type, data):
-        status, asset = self.http(
-            "POST", "/mock/assets?filename=%s&content_type=%s" % (filename, content_type), data, auth=False)
+    def seed_asset(self, filename, content_type, data, project_id=None):
+        url = "/mock/assets?filename=%s&content_type=%s" % (filename, content_type)
+        if project_id:
+            url += "&project_id=" + project_id
+        status, asset = self.http("POST", url, data, auth=False)
         assert status == 201, asset
         return asset["id"]
 
@@ -630,6 +632,27 @@ def main():
             assert res["kind"] == "video" and res["imported"] == ["cut.mp4"], res
 
         checks.check("import_asset: the rendered video into the bin", import_video)
+
+        def import_several_and_a_project():
+            project = "0d6c7a52-5f1e-4c55-9a52-0f6e4c3b2a10"
+            with open(wav_path, "rb") as handle:
+                wav = handle.read()
+            clip = caller.asset_bytes(made["mp4"])
+            first = caller.seed_asset("shot-1.mp4", "video/mp4", clip, project)
+            second = caller.seed_asset("shot-2.png", "image/png", make_png(160, 90), project)
+            third = caller.seed_asset("room-tone.wav", "audio/wav", wav, project)
+            res = expect_ok(caller.command("import_asset", {"asset_ids": [second, first], "bin": "Selects"}))
+            assert res["asset_ids"] == [second, first] and res["imported"] == ["shot-2.png", "shot-1.mp4"], res
+            res = expect_ok(caller.command("import_asset", {"project_id": project, "bin": "Assembly",
+                                                            "append": True}, 300))
+            assert res["asset_ids"] == [first, second, third], res
+            items = res["appended"]["items"]
+            video = [i["name"] for i in items if i["track"].startswith("V")]
+            audio = [i["name"] for i in items if i["track"].startswith("A")]
+            assert video == ["shot-1.mp4", "shot-2.png"], res["appended"]  # the MP4's own sound is on A too
+            assert audio[-1] == "room-tone.wav", res["appended"]
+
+        checks.check("import_asset: asset_ids and project_id, in order", import_several_and_a_project)
 
         def color_preset_lut():
             slug, name = COLOR_PRESETS[0][0], COLOR_PRESETS[0][1]

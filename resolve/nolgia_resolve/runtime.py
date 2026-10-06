@@ -569,13 +569,9 @@ def _base_url(env):
 
 
 def _open_url(url):
-    try:
-        if webbrowser.open(url):
-            return
-    except Exception:
-        pass
-    if hasattr(os, "startfile"):
-        os.startfile(url)  # noqa: S606 - opens the sign in page in the browser
+    """The sign in page, in the default browser (Python's webbrowser module,
+    which works the same on Windows, macOS and Linux)."""
+    webbrowser.open(url)
 
 
 def connect_resolve():

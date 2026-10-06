@@ -172,6 +172,17 @@ def _timecode(args, key):
     return value.strip()
 
 
+def _ids(args, key, most):
+    value = args.get(key)
+    if value is None or value == []:
+        return None
+    if not isinstance(value, list) or not all(isinstance(v, str) and v.strip() for v in value):
+        raise CommandError("`%s` must be a list of asset ids." % key)
+    if len(value) > most:
+        raise CommandError("`%s` takes at most %d ids at a time." % (key, most))
+    return [v.strip() for v in value]
+
+
 def _slug(args, key):
     value = _str(args, key)
     if value is None:
@@ -217,10 +228,14 @@ def validate(kind, args):
         out["width"] = _int(args, "width", 16, 1920)
     elif kind == "import_asset":
         out["asset_id"] = _str(args, "asset_id")
+        out["asset_ids"] = _ids(args, "asset_ids", 100)
+        out["project_id"] = _str(args, "project_id")
         out["color_preset"] = _slug(args, "color_preset")
-        if bool(out["asset_id"]) == bool(out["color_preset"]):
-            raise CommandError("Give `asset_id` (a file from your NOLGIA library) or `color_preset` "
-                               "(a NOLGIA color preset, for example kodak-portra-400), not both.")
+        given = [k for k in ("asset_id", "asset_ids", "project_id", "color_preset") if out[k]]
+        if len(given) != 1:
+            raise CommandError("Give one of `asset_id` (a file from your NOLGIA library), `asset_ids` (several, "
+                               "in order), `project_id` (a NOLGIA project's media) or `color_preset` (a NOLGIA "
+                               "color preset, for example kodak-portra-400).")
         out["append"] = _bool(args, "append")
         out["bin"] = _str(args, "bin")
         out["apply_to"] = _str(args, "apply_to", choices=LUT_TARGETS)

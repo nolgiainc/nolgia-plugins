@@ -83,7 +83,7 @@ class Wording(unittest.TestCase):
         texts = []
         for name in CUSTOMER_FILES:
             texts += [(name, t) for t in string_literals(os.path.join(PLUGIN, name))]
-        for name in ("INSTALL.txt", "install-windows.cmd", "install-unix.sh"):
+        for name in ("INSTALL.txt", "install.cmd", "install.sh"):
             with open(os.path.join(PLUGIN, "install", name), encoding="utf-8") as handle:
                 texts += [(name, line) for line in handle if not line.startswith(("rem ", "#"))]
         texts.append(("README", resolve_readme()))
@@ -103,7 +103,7 @@ class Wording(unittest.TestCase):
                 self.fail("%s: %r should say NOLGIA" % (name, text[max(0, match.start() - 40):match.end() + 40]))
 
     def test_windows_installer_has_no_unix_only_bits(self):
-        with open(os.path.join(PLUGIN, "install", "install-windows.cmd"), encoding="utf-8") as handle:
+        with open(os.path.join(PLUGIN, "install", "install.cmd"), encoding="utf-8") as handle:
             text = handle.read()
         self.assertIn("%APPDATA%\\Blackmagic Design\\DaVinci Resolve\\Support\\Fusion\\Scripts\\Utility", text)
         self.assertNotIn("$HOME", text)

@@ -9,15 +9,15 @@ The zip holds:
 
     Utility/NOLGIA.py              the Workspace > Scripts entry
     Utility/nolgia_resolve.zip     the plugin (the nolgia_resolve package)
-    install-windows.cmd            copy both into Resolve's Scripts/Utility folder
-    install-macos.command            (the same for macOS)
-    install-linux.sh                 (and Linux)
+    install.cmd                    Windows: copy both into Resolve's Scripts/Utility folder
+    install.sh                     macOS and Linux: the same
     INSTALL.txt                    the install steps
     LICENSE
 
-The plugin is zipped so Resolve, which lists every .py file under
-Scripts/Utility in its menu, shows only NOLGIA. Builds are reproducible:
-entries are sorted and dated 2026-01-01.
+The plugin's modules are zipped so the only script in the Utility folder is
+NOLGIA.py (Resolve lists the scripts it finds in its Scripts folders, and
+their sub folders, in Workspace > Scripts). Builds are reproducible: entries
+are sorted and dated 2026-01-01.
 """
 
 import argparse
@@ -85,15 +85,14 @@ def build(out_dir=None):
     target = os.path.join(out_dir, "nolgia-resolve-%s.zip" % ver)
     install = os.path.join(HERE, "install")
     notes = _read(os.path.join(install, "INSTALL.txt")).replace(b"{version}", ver.encode("ascii"))
-    unix = _read(os.path.join(install, "install-unix.sh"))
     entries = [
-        ("INSTALL.txt", _crlf(notes), 0o644),
+        ("INSTALL.txt", notes, 0o644),
         ("LICENSE", _read(os.path.join(HERE, "LICENSE")), 0o644),
         ("Utility/NOLGIA.py", _read(os.path.join(HERE, "NOLGIA.py")), 0o644),
         ("Utility/" + LIBRARY, library_bytes(), 0o644),
-        ("install-linux.sh", unix, 0o755),
-        ("install-macos.command", unix, 0o755),
-        ("install-windows.cmd", _crlf(_read(os.path.join(install, "install-windows.cmd"))), 0o644),
+        ("install.sh", _read(os.path.join(install, "install.sh")), 0o755),
+        # cmd.exe reads batch files most reliably with Windows line ends.
+        ("install.cmd", _crlf(_read(os.path.join(install, "install.cmd"))), 0o644),
     ]
     tmp = target + ".part"
     with zipfile.ZipFile(tmp, "w") as archive:
