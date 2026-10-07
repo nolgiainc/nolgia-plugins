@@ -282,6 +282,13 @@ closes the apps' own warning dialogs as they appear (their text is printed;
 on macOS only when the terminal has Accessibility access), and removes
 `env.json` and the test assets it made in production when it is done.
 
+On macOS 26.6 (Apple silicon), on October 7, 2026, it passed in After Effects
+2026 (26.5), Premiere Pro 2026 (26.5.2) and Illustrator 2026 (30.8.2) against
+the mock API and the real one, with one exception: after a run against the
+real API, Premiere Pro ignored AppleScript's quit, so `premiere quits cleanly`
+failed. It still ignored it with the NOLGIA extension's processes stopped,
+and Cmd+Q quit it; the cause is not known yet.
+
 ## NOLGIA for Photoshop
 
 A UXP plugin for Photoshop 2024 (25.0) and newer. Tested on Windows with
