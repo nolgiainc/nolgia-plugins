@@ -115,8 +115,8 @@ with the zip attached as `nolgia-blender-<version>.zip`; the website links to
 that exact name.
 
 ```sh
-blender --command extension build --source-dir blender --output-filepath blender/dist/nolgia-blender-0.1.0.zip
-blender --command extension validate blender/dist/nolgia-blender-0.1.0.zip
+blender --command extension build --source-dir blender --output-filepath blender/dist/nolgia-blender-0.1.1.zip
+blender --command extension validate blender/dist/nolgia-blender-0.1.1.zip
 ```
 
 Run the mock API on its own:
@@ -143,11 +143,11 @@ switches. Closing the panel does not disconnect.
    Adobe's own installer. On Windows:
 
    ```bat
-   "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install nolgia-adobe-0.1.0.zxp
+   "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install nolgia-adobe-0.1.1.zxp
    ```
 
    On macOS the same tool is
-   `/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent --install nolgia-adobe-0.1.0.zxp`.
+   `/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent --install nolgia-adobe-0.1.1.zxp`.
    The installer skips a version that is already installed: to reinstall the
    same version, remove it first (`/remove NOLGIA`). The package is signed, so
    no debug setting is needed.
@@ -260,7 +260,7 @@ keeps it in `adobe/dist` (ignored by git):
 
 ```sh
 node adobe/tools/build.js --zxpsigncmd /path/to/ZXPSignCmd.exe
-# adobe/dist/nolgia-adobe-0.1.0.zxp
+# adobe/dist/nolgia-adobe-0.1.1.zxp
 ```
 
 `--debug` adds a `.debug` file that opens Chrome DevTools on ports 8092 to 8094
@@ -277,15 +277,16 @@ python3 adobe/tests/e2e_adobe.py --zxpsigncmd /path/to/ZXPSignCmd.exe
 python3 adobe/tests/e2e_adobe.py --api prod --token-file ~/.config/nolgia/tokens.json --no-install
 ```
 
-It runs on Windows or from WSL (Windows paths through `wslpath`), closes the
-apps' own warning dialogs as they appear (their text is printed), and removes
+It runs on Windows, from WSL (Windows paths through `wslpath`) or on macOS,
+closes the apps' own warning dialogs as they appear (their text is printed;
+on macOS only when the terminal has Accessibility access), and removes
 `env.json` and the test assets it made in production when it is done.
 
 ## NOLGIA for Photoshop
 
 A UXP plugin for Photoshop 2024 (25.0) and newer. Tested on Windows with
-Photoshop 2026 (27.5); UXP plugins run on macOS too, but this one has not
-been tried there yet.
+Photoshop 2026 (27.5) and on macOS 26.6 (Apple silicon) with Photoshop 2026
+(27.11), against the mock API.
 
 ### Install and use
 
@@ -394,7 +395,7 @@ python3 photoshop/build.py --dev-domain http://localhost:8791
 Releases are tagged `photoshop-v<version>` with the file attached as
 `nolgia-photoshop-<version>.ccx`.
 
-The end-to-end test runs on Windows (from Windows or from WSL). It builds the
+The end-to-end test runs on Windows (from Windows or from WSL) and on macOS. It builds the
 plugin, installs it with Adobe's installer, starts Photoshop (which must be
 closed first), drives every command through the API as an agent would,
 checks the results, the files and the uploaded images, signs in with the
@@ -437,8 +438,8 @@ each line starting with `NOLGIA:`.
 
 A script plugin for DaVinci Resolve Studio 21.1 and newer (since 21.1 Resolve
 runs Python scripts only in the Studio edition). It needs Python 3.8 or
-newer and nothing outside Python's standard library. Tested on Windows; it is
-written for macOS and Linux too, but has not been run there yet (see
+newer and nothing outside Python's standard library. Tested on Windows and
+macOS; it is written for Linux too, but has not been run there yet (see
 [Tested on](#tested-on)).
 
 Which Python runs it: Resolve runs a Scripts menu script in its own
@@ -446,9 +447,10 @@ Which Python runs it: Resolve runs a Scripts menu script in its own
 Resolve 21.1 took the one named in `PYTHON3HOME` (or `PYTHONHOME`) when set,
 else the one in the registry (a per-user install before a machine-wide one;
 `PATH` plays no part), not its own bundled Python 3.14. What it picks on a
-computer with no Python installed, and on macOS, has not been checked; on a
-Mac, the Python 3 that Apple's Command Line Tools install (3.9 at the time of
-writing) is new enough if Resolve binds to it.
+computer with no Python installed has not been checked. On the Mac it was
+tested on, Resolve 21.1.1 took Homebrew's Python 3.14 (with Apple's Command
+Line Tools Python 3.9 also installed); the 3.9 is new enough too if Resolve
+binds to it.
 
 ### Install and use
 
@@ -528,7 +530,8 @@ another file. The LUT folder:
 - macOS: `/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/NOLGIA`
   (Resolve's documented LUT folder), or, when that cannot be written without
   administrator rights, `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/NOLGIA`.
-  Not yet tried: which of the two Resolve reads on a Mac is still to be checked.
+  Resolve's installer lets every user write the first one, and Resolve 21.1.1
+  read the LUTs from it; the folder in your home has not been tried.
 - Linux: `/opt/resolve/LUT/NOLGIA`, else `~/.local/share/DaVinciResolve/LUT/NOLGIA`
   (not yet tried).
 - Anywhere: `NOLGIA_LUT_DIR`, or Resolve's own `BMD_RESOLVE_LUT_DIR`, when set.
@@ -652,7 +655,11 @@ an agent's would, the rest through `POST /bridge/commands`
 `resolve/tests/inapp_resolve.py --api prod`, 11 checks). Every asset the
 runs made was deleted afterwards.
 
-Not yet run on macOS or Linux.
+macOS 26.6 (Apple silicon) with DaVinci Resolve Studio 21.1.1 (build 10),
+on October 7, 2026, against the mock API: `resolve/tests/e2e_resolve.py`
+(32 checks) and `resolve/tests/inapp_resolve.py` (11 checks), which installs
+the download with `install.sh` and runs the NOLGIA window inside the open
+Resolve. Not yet run against the real API on macOS, nor on Linux.
 
 ### Development
 
