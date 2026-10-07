@@ -78,7 +78,11 @@ class Build(unittest.TestCase):
         out = subprocess.run(["sh", os.path.join(folder, "install.sh")], capture_output=True, text=True,
                              env=dict(os.environ, HOME=home), timeout=60)
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
-        target = os.path.join(home, ".local", "share", "DaVinciResolve", "Fusion", "Scripts", "Utility")
+        if sys.platform == "darwin":
+            target = os.path.join(home, "Library", "Application Support", "Blackmagic Design", "DaVinci Resolve",
+                                  "Fusion", "Scripts", "Utility")
+        else:
+            target = os.path.join(home, ".local", "share", "DaVinciResolve", "Fusion", "Scripts", "Utility")
         self.assertEqual(sorted(os.listdir(target)), ["NOLGIA.py", "nolgia_resolve.zip"])
 
 
