@@ -89,10 +89,16 @@ class PanelTest(unittest.TestCase):
             self.assertTrue(self.item(element_id).props["Alignment"]["AlignTop"], element_id)
 
     def test_sign_in_connect_pause_and_sign_out(self):
+        # Resolve lays the window out once, at Show; every change of what is
+        # visible has to ask for the layout again or the new elements pile up.
+        before = self.win.relayouts
+        self.panel.refresh(force=True)
+        self.assertEqual(self.win.relayouts, before, "nothing visible changed, no relayout")
         self.win.fire("SignIn")
         self.tick_until(lambda: self.item("Code").Text != "")
         self.assertIn("Enter code", self.item("Status").Text)
         self.assertTrue(self.visible("OpenPage") and self.visible("CancelSignIn"))
+        self.assertGreater(self.win.relayouts, before, "the code card appeared: the layout was recalculated")
         self.assertEqual(len(self.opened), 1)
         self.tick_until(lambda: self.controller.connected and self.item("Account").Text.startswith("Signed in as"))
         self.tick_until(lambda: self.item("Status").Text == "Connected. NOLGIA can work in this DaVinci Resolve.")
@@ -101,6 +107,7 @@ class PanelTest(unittest.TestCase):
         self.assertFalse(self.item("AskBeforeRun").Checked)
         self.assertEqual(self.item("Pause").Text, "Pause")
         self.assertFalse(self.visible("Code"))
+        self.assertGreater(self.win.relayouts, before + 1, "the code card went away: recalculated again")
         self.win.fire("Pause")
         self.tick_until(lambda: self.controller.worker is None)
         self.assertEqual(self.item("Pause").Text, "Resume")

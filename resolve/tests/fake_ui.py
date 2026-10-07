@@ -109,7 +109,11 @@ class Window:
         self.layout = layout
         self.On = Handlers()
         self.shown = False
+        self.relayouts = 0
         self.items = {e.props["ID"]: e for e in layout.walk() if "ID" in e.props}
+
+    def RecalcLayout(self):
+        self.relayouts += 1
 
     def GetItems(self):
         return dict(self.items)

@@ -303,27 +303,41 @@ class Panel:
         prompt = ctl.login.prompt if signing_in else None
         it["Code"].Text = prompt.user_code if prompt else ""
         it["CodeHint"].Text = "Approve this code in the browser page that opened." if prompt else ""
-        _show(it["Code"], bool(prompt))
-        _show(it["CodeHint"], bool(prompt))
-        _show(it["Account"], bool(it["Account"].Text))
-        _show(it["SignIn"], not signed_in and not signing_in)
-        _show(it["OpenPage"], bool(prompt))
-        _show(it["CancelSignIn"], signing_in)
-        _show(it["SignOut"], signed_in and not signing_in)
+        shown = [
+            _show(it["Code"], bool(prompt)),
+            _show(it["CodeHint"], bool(prompt)),
+            _show(it["Account"], bool(it["Account"].Text)),
+            _show(it["SignIn"], not signed_in and not signing_in),
+            _show(it["OpenPage"], bool(prompt)),
+            _show(it["CancelSignIn"], signing_in),
+            _show(it["SignOut"], signed_in and not signing_in),
+        ]
         for key in ("Connected", "AllowAgent", "AskBeforeRun"):
-            _show(it[key], signed_in and not signing_in)
+            shown.append(_show(it[key], signed_in and not signing_in))
         it["Connected"].Checked = bool(ctl.connected)
         it["AllowAgent"].Checked = bool(ctl.setting("allow_agent"))
         it["AskBeforeRun"].Checked = bool(ctl.setting("ask_before_run"))
         waiting = len(ctl.executor.approvals)
         it["Waiting"].Text = ("%d request%s waiting for you." % (waiting, "" if waiting == 1 else "s")) if waiting else ""
-        _show(it["Waiting"], bool(waiting))
-        _show(it["Review"], bool(waiting))
+        shown.append(_show(it["Waiting"], bool(waiting)))
+        shown.append(_show(it["Review"], bool(waiting)))
         it["Pause"].Text = "Pause" if ctl.connected else "Resume"
-        _show(it["Pause"], signed_in)
+        shown.append(_show(it["Pause"], signed_in))
+        if any(shown):
+            self._relayout()
         if ctl.activity.version != self._activity_drawn:
             self._activity_drawn = ctl.activity.version
             self._draw_activity()
+
+    def _relayout(self):
+        """UIManager lays a window out when it is shown. After that an element
+        hidden or shown through Hidden keeps the geometry it had (one shown for
+        the first time, like the sign-in code card, is drawn over the top of the
+        window) until the window recalculates its layout."""
+        try:
+            self.win.RecalcLayout()
+        except Exception:
+            pass
 
     def _draw_activity(self):
         tree = self.items["Activity"]
@@ -381,10 +395,15 @@ def _who(ev):
 
 
 def _show(element, visible):
+    """Show or hide an element. True when that changed its state."""
     try:
-        element.Hidden = not visible
+        hidden = not visible
+        if bool(element.Hidden) == hidden:
+            return False
+        element.Hidden = hidden
+        return True
     except Exception:
-        pass
+        return False
 
 
 def _plugin_version():
