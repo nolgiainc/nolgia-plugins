@@ -832,7 +832,10 @@ class Ops:
 
     def import_file(self, pool, folder, path):
         """Import one file into `folder`. Returns (clips, was_already_there)."""
-        before = call(pool, "GetCurrentFolder")
+        # Right after CreateProject, Resolve 21.1.1 answers None for the current
+        # folder; the root is then the place to put the pool back to, or the
+        # import bin stays current and the next CreateEmptyTimeline lands in it.
+        before = call(pool, "GetCurrentFolder") or call(pool, "GetRootFolder")
         try:
             call(pool, "SetCurrentFolder", folder)
             # Resolve 21.1.1 imports with a list of paths and returns None for

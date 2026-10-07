@@ -419,6 +419,12 @@ class ImportMedia(Base):
         self.assertTrue(again["assets"][0]["already_in_bin"])
         self.assertEqual(bins.count("NOLGIA imports"), 1)
 
+    def test_import_puts_the_pool_back_on_the_root_when_no_folder_was_current(self):
+        # Resolve 21.1.1 answers None for GetCurrentFolder right after CreateProject.
+        self.project.pool.current = None
+        self.do("import_asset", {"asset_id": "a1"}, {"kind": "video", "path": self.media(), "asset_id": "a1"})
+        self.assertIs(self.project.pool.current, self.project.pool.root)
+
     def test_append_to_the_current_timeline(self):
         path = self.media("still.png")
         res = self.do("import_asset", {"asset_id": "a1", "append": True}, {"kind": "image", "path": path})

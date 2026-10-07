@@ -81,6 +81,15 @@ returns the traceback.
   numbers on a timeline start at its start timecode (`timeline.GetStartFrame()`:
   01:00:00:00 at 24 fps is frame 86400); the plugin's own `frame` arguments
   count from 0 at the start of the timeline.
+- `project_manager.CreateProject(name)` makes and opens a project that is not
+  in the project library yet: `GetProjectListInCurrentFolder()` leaves it out,
+  `nolgia_app_save` refuses it, `project.ExportProject()` answers False and
+  `CloseProject()` loses it. It joins the library at its first change (a bin
+  added, a clip imported), so make that change, then save, before anything
+  else.
+- `media_pool.CreateEmptyTimeline(name)` makes the timeline in the current
+  media pool folder. Call `media_pool.SetCurrentFolder(media_pool.GetRootFolder())`
+  first when it belongs at the root.
 - `project.GetCurrentTimeline()` (and the `timeline` global) is None when no
   timeline is open. A timeline you make in a run is not the `timeline` global:
   keep the object `CreateEmptyTimeline` returned, call
@@ -112,14 +121,19 @@ returns the traceback.
 - Clip facts are `clip.GetClipProperty()` (one dict; the keys are the Clip
   Attributes names: `FPS` is a number, `Resolution` is `"1920x1080"`, `Type` is
   `Video`, `Audio` or `Video + Audio`, `Duration` a timecode, `Frames` a count,
-  `File Path` the file).
+  `File Path` the file). An audio clip has no `Frames`, `Resolution` or
+  `FPS`: take a music length from the cut, not from the clip.
 - Grades: `item.GetNodeGraph()` is a clip's node graph and
   `timeline.GetNodeGraph()` the timeline's own; `GetNumNodes()`,
   `GetNodeLabel(i)`, `GetToolsInNode(i)` and `GetLUT(i)` read a node,
-  `SetLUT(i, path)` and `SetNodeEnabled(i, on)` change it. `SetLUT` takes an
-  absolute path or a path relative to Resolve's LUT folder
-  (`NOLGIA/Kodak Portra 400.cube`) that Resolve has already listed
-  (`project.RefreshLUTList()`). `timeline.GetCurrentVideoItem()` is the clip
+  `SetLUT(i, path)` and `SetNodeEnabled(i, on)` change it. The API cannot
+  add a node: a fresh timeline graph has none (`GetNumNodes()` is 0), while
+  an ungraded clip has one empty node. `GetToolsInNode(i)` answers None, not
+  `[]`, for an empty node. `SetLUT` takes an absolute path or a path relative
+  to Resolve's LUT folder (`NOLGIA/Kodak Portra 400.cube`) that Resolve has
+  already listed (`project.RefreshLUTList()`); `GetLUT(i)` reads it back
+  with the computer's own separator (`NOLGIA\Kodak Portra 400.cube` on
+  Windows), so compare by name. `timeline.GetCurrentVideoItem()` is the clip
   under the playhead and `timeline.GetSelectedClips()` the selection; when a
   grading call answers None or False, switch to the Color page with
   `resolve.OpenPage("color")`, run the step, and put the page back

@@ -59,13 +59,18 @@ first frame to look at. Their existing timelines are never touched.
 3. **Read the clips.** One `nolgia_app_run` over the bin's clips
    (`bin.GetClipList()`, matched to the imported names with `GetName()`):
    `GetClipProperty()` gives `Type` (`Video`, `Video + Audio`, `Audio`, or a
-   still), `FPS`, `Resolution`, `Frames` and `Duration`. Work out the frame
-   size and the frame rate most of the picture clips share, and list the
-   ones that differ. Say the plan in two lines (size, rate, number of clips,
+   still), `FPS`, `Resolution`, `Frames` and `Duration` (an `Audio` clip has
+   no `Frames`, `Resolution` or `FPS`). Work out the frame size and the
+   frame rate most of the picture clips share, and list the ones that
+   differ. A music file that came in as `Video + Audio` (an mp4 with a black
+   picture) would be laid on V1 as a clip: say so and ask whether to leave
+   it out, or to upload the audio itself to the Library. Say the plan in two lines (size, rate, number of clips,
    music) and wait for a yes unless they said "go".
 4. **Make the timeline, before any clip is on it.** One `nolgia_app_run`:
-   `tl = media_pool.CreateEmptyTimeline(name)` (None means the name is in
-   use: stop and ask), then
+   `media_pool.SetCurrentFolder(media_pool.GetRootFolder())` (a timeline is
+   made in the current folder, and the import may have left the bin
+   current), `tl = media_pool.CreateEmptyTimeline(name)` (None means the
+   name is in use: stop and ask), then
    `tl.SetSettings({"useCustomSettings": "1", "timelineResolutionWidth": "1080", "timelineResolutionHeight": "1920", "timelineFrameRate": "24"})`
    with the size and rate you chose (strings; `"29.97 DF"` for drop frame),
    then `project.SetCurrentTimeline(tl)`. `SetSettings` answers False when a
@@ -86,8 +91,9 @@ first frame to look at. Their existing timelines are never touched.
    `nolgia_app_run`: add a track with `tl.AddTrack("audio", "stereo")` and
    read `tl.GetTrackCount("audio")` for its index, then
    `media_pool.AppendToTimeline([{"mediaPoolItem": music, "mediaType": 2, "trackIndex": index, "recordFrame": tl.GetStartFrame(), "startFrame": 0, "endFrame": length}])`
-   where `length` is the cut's frames (`tl.GetEndFrame() - tl.GetStartFrame()`),
-   no more than the clip's own `Frames`. Read the new item's `GetStart()`: it
+   where `length` is the cut's frames (`tl.GetEndFrame() - tl.GetStartFrame()`);
+   an audio clip reports no `Frames`, so when the music is shorter than the
+   cut the item simply ends where the music does. Read the new item's `GetStart()`: it
    must equal `tl.GetStartFrame()`. If it landed elsewhere, remove only that
    item (`tl.DeleteClips([item])`) and try `"recordFrame": 0`; the API cannot
    move an item once placed. Say that the music is laid under the cut, not

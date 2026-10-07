@@ -26,12 +26,15 @@ off or dialled back by the person at any time.
    at a still first (see below) and propose two or three stocks that suit the
    footage, by their real names, with one line each on why. (Default: your
    first suggestion.)
-3. Where the stock may live. For the whole timeline the default is the
-   timeline's own node graph: one node for every clip, nothing on the clips
-   changes. For some clips it is an empty node at the end of each clip's
-   grade, or a new local color version of each clip named after the stock, so
-   their own version stays as it was. (Default: the timeline graph for all
-   clips, else an empty node; a new version when there is none.)
+3. Where the stock may live. The default is an empty node at the end of each
+   clip's grade (an ungraded clip has exactly one, so nothing of theirs
+   changes). When the timeline's own node graph already has an empty node
+   (the person added one on the Color page; a fresh timeline graph has none
+   and the API cannot add one), the stock can go there once for every clip.
+   The other way is a new local color version of each clip named after the
+   stock, so their own version stays as it was. (Default: an empty node on
+   each clip; the timeline graph when it has one; a new version when a clip
+   has no empty node.)
 
 ## Build
 
@@ -87,16 +90,18 @@ off or dialled back by the person at any time.
    LUT folder, refreshes the LUT list and answers `lut` (the path Resolve lists
    it under, `NOLGIA/Kodak Portra 400.cube`) and `path` (the file). Keep `lut`.
 5. **Apply it in a place of its own.** One `nolgia_app_run`, in this order of
-   preference, never on a node that already holds tools or a LUT:
-   - *All clips:* the timeline's graph, `g = timeline.GetNodeGraph()`. Find a
-     node `i` where `g.GetToolsInNode(i)` is empty and `g.GetLUT(i)` is `""`
-     (a fresh timeline graph has one), call `g.SetLUT(i, lut)` and read
-     `g.GetLUT(i)` back. Every clip gets the stock after its own grade, and
-     nothing on the clips changes.
-   - *Some clips, or a timeline graph already in use:* for each clip,
-     `g = item.GetNodeGraph()`, find an empty node the same way, preferring
-     the last one so the stock comes after their corrections, and `SetLUT` it
-     there.
+   preference, never on a node that already holds tools or a LUT. An empty
+   node is one where `GetToolsInNode(i)` answers None or `[]` and `GetLUT(i)`
+   is `""`:
+   - *Each clip:* `g = item.GetNodeGraph()`, find an empty node, preferring
+     the last one so the stock comes after their corrections (an ungraded
+     clip has one node, empty), call `g.SetLUT(i, lut)` and read `g.GetLUT(i)`
+     back.
+   - *All clips at once, only when the timeline graph has an empty node:*
+     `g = timeline.GetNodeGraph()`; when `g.GetNumNodes()` is at least 1 and
+     one node is empty, `SetLUT` there and every clip gets the stock after its
+     own grade. A fresh timeline graph has no node and the API cannot add
+     one, so this is the exception, not the default.
    - *A clip with no empty node:* the API cannot add a node. Either add a new
      local color version named `NOLGIA <stock name>`
      (`item.AddVersion(name, 0)` then `item.LoadVersionByName(name, 0)`),
@@ -126,7 +131,7 @@ off or dialled back by the person at any time.
 
 ## Check
 
-- Before and after at full width (`width` 1920): skin must still read as
+- Before and after at the timeline's width (the plugin caps `width` at it): skin must still read as
   skin (no green or magenta cast), blacks must not be crushed and highlights
   must not clip harder than before; a stock stacked on a clip that already had
   a LUT must be said and shown.
