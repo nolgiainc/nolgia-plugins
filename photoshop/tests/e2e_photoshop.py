@@ -777,7 +777,17 @@ result = { id: d.id, name: d.name, layers: d.layers.map(l => [l.name, l.kind]) }
         checks.check("run: timeout stops waiting", run_timeout)
 
         def run_language():
-            cmd = caller.command("run", {"language": "python", "code": "print(1)"})
+            # The real API refuses it before it reaches the plugin; the mock
+            # passes it on, so the plugin's own refusal is checked there.
+            body = {"app": "photoshop", "kind": "run", "args": {"language": "python", "code": "print(1)"}}
+            if caller.session_id:
+                body["session_id"] = caller.session_id
+            status, data = caller.http("POST", "/v1/bridge/commands", body)
+            if status == 422:
+                assert data["code"] == "language_not_supported", data
+                return "refused by the API"
+            assert status == 201, (status, data)
+            cmd = caller.wait(data["id"])
             assert cmd["status"] == "failed" and "UXP JavaScript only" in cmd["error"], cmd
 
         checks.check("run: refuses other languages", run_language)
