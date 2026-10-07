@@ -378,7 +378,7 @@ def main():
             assert session["app"] == "blender"
             assert session["capabilities"] == list(CAPABILITIES), session["capabilities"]
             assert session["plugin_version"] == PLUGIN_VERSION
-            assert session["app_version"].startswith("4."), session["app_version"]
+            assert int(session["app_version"].split(".")[0]) >= 4, session["app_version"]
             assert session["document"] == {"name": ""}, session["document"]  # unsaved: empty name
             assert session["allow_agent"] is True
             assert session["machine_name"]
@@ -575,6 +575,23 @@ def main():
             assert after["value"][:3] == ["PNG", 1, 250], "settings not restored: %s" % after["value"]
 
         checks.check("export: png and mp4 (H.264), settings restored", export_png_and_mp4)
+
+        def video_output_scene():
+            # Blender 5 lists PNG only under the IMAGE media type: a scene set to
+            # render video must still preview and export stills, and stay video.
+            expect_ok(caller.command("run", {"language": "python", "code":
+                "import bpy\nim = bpy.context.scene.render.image_settings\n"
+                "if hasattr(im, 'media_type'):\n    im.media_type = 'VIDEO'\nim.file_format = 'FFMPEG'"}))
+            expect_ok(caller.command("preview", {"width": 64, "engine": "workbench"}))
+            res = expect_ok(caller.command("export", {"format": "png", "frames": "1"}))
+            assert caller.asset_bytes(res["asset_id"])[:8] == b"\x89PNG\r\n\x1a\n"
+            after = expect_ok(caller.command("run", {"language": "python", "code":
+                "import bpy\nim = bpy.context.scene.render.image_settings\n"
+                "result = [im.file_format, getattr(im, 'media_type', 'VIDEO')]\n"
+                "if hasattr(im, 'media_type'):\n    im.media_type = 'IMAGE'\nim.file_format = 'PNG'"}))
+            assert after["value"] == ["FFMPEG", "VIDEO"], "settings not restored: %s" % after["value"]
+
+        checks.check("preview and png export with the scene set to video", video_output_scene)
 
         def save_needs_path():
             cmd = caller.command("save")
