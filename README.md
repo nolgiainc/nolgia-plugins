@@ -284,10 +284,12 @@ on macOS only when the terminal has Accessibility access), and removes
 
 On macOS 26.6 (Apple silicon), on October 7, 2026, it passed in After Effects
 2026 (26.5), Premiere Pro 2026 (26.5.2) and Illustrator 2026 (30.8.2) against
-the mock API and the real one, with one exception: after a run against the
-real API, Premiere Pro ignored AppleScript's quit, so `premiere quits cleanly`
-failed. It still ignored it with the NOLGIA extension's processes stopped,
-and Cmd+Q quit it; the cause is not known yet.
+the mock API and the real one. Premiere Pro 26.5.2 on macOS ignores
+AppleScript, its quit included, with or without NOLGIA installed (Cmd+Q
+works), so the test quits it through the plugin with ExtendScript's
+`app.quit()` and skips the ask check there (see the test's docstring). The
+test's macOS support changed how it drives the apps on Windows too; it has
+not been run on Windows since.
 
 ## NOLGIA for Photoshop
 
@@ -416,7 +418,8 @@ python3 photoshop/tests/e2e_photoshop.py --prod --token-file ~/.config/nolgia/to
 
 `--prod` uses the real API with your token: it uploads a few small test
 images to your library and signs in one more device session. Nothing costs
-credits.
+credits. The test's macOS support changed how it drives Photoshop on Windows
+too; it has not been run on Windows since.
 
 Scripts and tests connect without clicks through a developer file,
 `nolgia-dev.json` in the plugin's data folder, read when Photoshop starts
