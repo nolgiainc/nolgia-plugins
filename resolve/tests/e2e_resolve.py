@@ -312,6 +312,9 @@ class Caller:
     def __init__(self, root_url, token, mock=True):
         self.root = root_url
         self.token = token
+        # Against the real API other Resolves may be connected to the same
+        # account: once known, every command names this run's session.
+        self.session_id = None
         self.mock = mock
         self.assets = []  # (asset_id, name) made by this run
 
@@ -334,9 +337,10 @@ class Caller:
                 return err.code, payload
 
     def enqueue(self, kind, args=None, timeout=120, headers=None):
-        status, data = self.http("POST", "/v1/bridge/commands",
-                                 {"app": "resolve", "kind": kind, "args": args or {}, "timeout_seconds": timeout},
-                                 headers=headers)
+        body = {"app": "resolve", "kind": kind, "args": args or {}, "timeout_seconds": timeout}
+        if self.session_id:
+            body["session_id"] = self.session_id
+        status, data = self.http("POST", "/v1/bridge/commands", body, headers=headers)
         assert status == 201, "enqueue %s: %s %s" % (kind, status, data)
         return data["id"]
 
@@ -673,6 +677,8 @@ def main():
             assert session["document"] == {"name": project_name}, session["document"]
             assert session["allow_agent"] is True and session["machine_name"]
             made["session"] = session
+            if not caller.mock:
+                caller.session_id = session["id"]
 
         if not checks.check("serve connects and registers a session", connects):
             raise SystemExit
@@ -763,7 +769,7 @@ def main():
             assert value["pool"] and value["pm"] and value["version"].startswith("21."), value
             assert "hello from resolve" in res["stdout"], res
             if mcp is not None:
-                out, _ = mcp.call("nolgia_app_run", {"app": "resolve", "code": "result = timeline.GetName()",
+                out, _ = mcp.call("nolgia_app_run", {"app": "resolve", "session_id": made["session"]["id"], "code": "result = timeline.GetName()",
                                                      "language": "python"})
                 assert out["status"] == "succeeded" and out["result"]["value"] == "NOLGIA timeline", out
 
@@ -800,7 +806,7 @@ def main():
                                                if hopped else "worked without showing the Color page"), flush=True)
             made["color_hop"] = hopped
             if mcp is not None:
-                out, parts = mcp.call("nolgia_app_preview", {"app": "resolve", "width": 480, "frame": 0})
+                out, parts = mcp.call("nolgia_app_preview", {"app": "resolve", "session_id": made["session"]["id"], "width": 480, "frame": 0})
                 assert out["status"] == "succeeded", out
                 caller.remember(out)
                 images = [p for p in parts if p.get("type") == "image"]
@@ -845,7 +851,7 @@ def main():
 
         def export_png():
             if mcp is not None:
-                out, _ = mcp.call("nolgia_app_export", {"app": "resolve", "format": "png", "frames": "0",
+                out, _ = mcp.call("nolgia_app_export", {"app": "resolve", "session_id": made["session"]["id"], "format": "png", "frames": "0",
                                                         "filename": "still"})
                 out = mcp.finish(out)
                 assert out["status"] == "succeeded", out
@@ -862,7 +868,7 @@ def main():
         def export_mp4():
             before = helper(host, work, "inspect")
             if mcp is not None:
-                out, _ = mcp.call("nolgia_app_export", {"app": "resolve", "format": "mp4", "frames": MP4_FRAMES,
+                out, _ = mcp.call("nolgia_app_export", {"app": "resolve", "session_id": made["session"]["id"], "format": "mp4", "frames": MP4_FRAMES,
                                                         "filename": "cut"})
                 out = mcp.finish(out)
                 assert out["status"] == "succeeded", out

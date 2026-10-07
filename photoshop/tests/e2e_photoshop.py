@@ -20,7 +20,7 @@ NOLGIA Bridge exactly as an agent drives it.
    signs out.
 7. Removes the developer file and closes Photoshop.
 
-Usage (Windows, from WSL or from Windows Python 3.8+):
+Usage (Windows, from WSL or from Windows Python 3.8+, or macOS):
 
     python3 photoshop/tests/e2e_photoshop.py                  # against tools/mock_bridge_server.py
     python3 photoshop/tests/e2e_photoshop.py --prod --token-file ~/.config/nolgia/tokens.json
@@ -60,6 +60,9 @@ PLUGIN_ID = "com.nolgia.photoshop"
 PHOTOSHOP = r"C:\Program Files\Adobe\Adobe Photoshop 2026\Photoshop.exe"
 UPIA = (r"C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI"
         r"\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe")
+MAC_PHOTOSHOP = "/Applications/Adobe Photoshop 2026/Adobe Photoshop 2026.app"
+MAC_UPIA = ("/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI"
+            "/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent")
 CAPABILITIES = ["info", "run", "preview", "import_asset", "export", "save", "open"]
 MOCK_TOKEN = "e2e-token"
 
@@ -166,13 +169,43 @@ foreach ($h in [NW]::For([uint32]$p.Id)) {
 class Windows:
     """Runs Windows programs and maps paths, from WSL or from Windows."""
 
+    sep = "\\"
+    photoshop = PHOTOSHOP
+    upia = UPIA
+    upia_flag = "/"
+
     def __init__(self):
         self.wsl = os.name != "nt" and os.path.exists("/proc/version") and \
             "microsoft" in open("/proc/version").read().lower()
         if os.name != "nt" and not self.wsl:
-            raise SystemExit("This test drives Photoshop on Windows: run it on Windows or in WSL.")
+            raise SystemExit("This test drives Photoshop on Windows or macOS: run it there or in WSL.")
 
-    def to_win(self, path):
+    def documents(self):
+        return self.env("USERPROFILE") + r"\Documents"
+
+    def uxp_root(self):
+        return self.env("APPDATA") + r"\Adobe\UXP"
+
+    def major_version(self, app):
+        return self.powershell("(Get-Item '%s').VersionInfo.ProductMajorPart" % app).stdout.strip()
+
+    def launch(self, app):
+        subprocess.Popen(["cmd.exe", "/c", "start", "", app], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def quit_photoshop(self):
+        self.run(["taskkill.exe", "/IM", "Photoshop.exe"], timeout=60)
+
+    def answer_dont_save(self):
+        self.powershell(DONT_SAVE_PS, timeout=60)
+
+    def close_gpu_notice(self):
+        self.powershell(GPU_NOTICE_PS, timeout=60)
+
+    def capture(self, out, title, min_width):
+        res = self.powershell(CAPTURE_PS, ["-Out", out, "-Title", title, "-MinWidth", str(min_width)])
+        return "saved" in res.stdout
+
+    def to_app(self, path):
         if not self.wsl:
             return path
         return subprocess.check_output(["wslpath", "-w", path], text=True).strip()
@@ -197,13 +230,71 @@ class Windows:
             handle.write(script)
         try:
             return self.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                             self.to_win(path)] + list(args), timeout=timeout)
+                             self.to_app(path)] + list(args), timeout=timeout)
         finally:
             shutil.rmtree(folder, ignore_errors=True)
 
     def photoshop_running(self):
         out = self.run(["tasklist.exe", "/FI", "IMAGENAME eq Photoshop.exe"], timeout=30).stdout
         return "photoshop.exe" in out.lower()
+
+
+class Mac:
+    """Runs Photoshop on macOS. Paths are the same for the test and for
+    Photoshop. The GPU notice and the window captures are Windows only."""
+
+    sep = "/"
+    photoshop = MAC_PHOTOSHOP
+    upia = MAC_UPIA
+    upia_flag = "--"
+    wsl = False
+
+    def to_app(self, path):
+        return path
+
+    def to_local(self, path):
+        return path
+
+    def run(self, args, timeout=120):
+        return subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                              errors="replace", timeout=timeout)
+
+    def documents(self):
+        return os.path.expanduser("~/Documents")
+
+    def uxp_root(self):
+        return os.path.expanduser("~/Library/Application Support/Adobe/UXP")
+
+    def major_version(self, app):
+        plist = os.path.join(app, "Contents", "Info.plist")
+        out = self.run(["defaults", "read", plist, "CFBundleShortVersionString"], timeout=30).stdout
+        return out.strip().split(".")[0]
+
+    def launch(self, app):
+        subprocess.Popen(["open", app], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def quit_photoshop(self):
+        # The test only runs when Photoshop was closed before it started, so
+        # every open document is one of its own: close them without saving.
+        self.run(["osascript", "-e", 'tell application id "com.adobe.Photoshop"\n'
+                  "close every document saving no\nquit\nend tell"], timeout=60)
+
+    def answer_dont_save(self):
+        self.quit_photoshop()
+
+    def close_gpu_notice(self):
+        pass
+
+    def capture(self, out, title, min_width):
+        return False
+
+    def photoshop_running(self):
+        out = self.run(["pgrep", "-f", "/Adobe Photoshop [0-9]+\\.app/Contents/MacOS/"], timeout=30)
+        return out.returncode == 0
+
+
+def make_host():
+    return Mac() if sys.platform == "darwin" else Windows()
 
 
 # ---------------------------------------------------------------- fixtures
@@ -418,32 +509,33 @@ def main():
     parser.add_argument("--prod", action="store_true", help="test against the real NOLGIA API")
     parser.add_argument("--api-url", default="https://api.nolgia.ai")
     parser.add_argument("--token-file", default=None, help="JSON file with access_token (prod)")
-    parser.add_argument("--photoshop", default=PHOTOSHOP)
+    parser.add_argument("--photoshop", default=None, help="Photoshop.exe (Windows) or its .app (macOS)")
     parser.add_argument("--port", type=int, default=8791, help="port for the mock API (default 8791)")
-    parser.add_argument("--workdir", default=None, help="folder for test files (default Documents\\NOLGIA test\\photoshop\\e2e)")
+    parser.add_argument("--workdir", default=None, help="folder for test files (default Documents/NOLGIA test/photoshop/e2e)")
     parser.add_argument("--skip-install", action="store_true", help="use the plugin already installed")
     parser.add_argument("--skip-sign-in", action="store_true", help="leave out the device sign in and restart")
     parser.add_argument("--keep-open", action="store_true", help="leave Photoshop open at the end")
     opts = parser.parse_args()
 
-    win = Windows()
+    win = make_host()
     win.scratch = tempfile.mkdtemp(prefix="nolgia-e2e-")
+    opts.photoshop = opts.photoshop or win.photoshop
     started = time.time()
     checks = Checks()
 
     if win.photoshop_running():
         raise SystemExit("Photoshop is running. Close it first: the test starts its own Photoshop.")
 
-    userprofile = win.env("USERPROFILE")
-    appdata = win.env("APPDATA")
-    work_win = opts.workdir or userprofile + r"\Documents\NOLGIA test\photoshop\e2e"
+    sep = win.sep
+    uxp_root = win.uxp_root()
+    work_win = opts.workdir or sep.join([win.documents(), "NOLGIA test", "photoshop", "e2e"])
     work = win.to_local(work_win)
     if os.path.exists(work):
         shutil.rmtree(work)
     for sub in ("files", "exports", "shots"):
         os.makedirs(os.path.join(work, sub))
-    files_win = work_win + r"\files"
-    exports_win = work_win + r"\exports"
+    files_win = work_win + sep + "files"
+    exports_win = work_win + sep + "exports"
     print("test folder: %s" % work_win, flush=True)
 
     # --------------------------------------------------------- API and token
@@ -476,24 +568,24 @@ def main():
     if not checks.check("build the .ccx", build_it):
         return finish(checks, started, opts, win, None)
 
-    major = win.powershell("(Get-Item '%s').VersionInfo.ProductMajorPart" % opts.photoshop).stdout.strip()
-    data_dir_win = appdata + r"\Adobe\UXP\PluginsStorage\PHSP\%s\External\%s\PluginData" % (major, PLUGIN_ID)
+    major = win.major_version(opts.photoshop)
+    data_dir_win = sep.join([uxp_root, "PluginsStorage", "PHSP", major, "External", PLUGIN_ID, "PluginData"])
     data_dir = win.to_local(data_dir_win)
-    plugins_info = win.to_local(appdata + r"\Adobe\UXP\PluginsInfo\v1\PS.json")
+    plugins_info = win.to_local(sep.join([uxp_root, "PluginsInfo", "v1", "PS.json"]))
 
     def install():
         if opts.skip_install:
             raise Skip("--skip-install")
-        upia = win.to_local(UPIA)
+        upia = win.to_local(win.upia)
         # By name: "NOLGIA for Photoshop" (plain "NOLGIA" would also remove the
         # NOLGIA extension for After Effects, Premiere Pro and Illustrator).
-        win.run([upia, "/remove", "NOLGIA for Photoshop"], timeout=300)
-        out = win.run([upia, "/install", win.to_win(ccx["path"])], timeout=300).stdout
+        win.run([upia, win.upia_flag + "remove", "NOLGIA for Photoshop"], timeout=300)
+        out = win.run([upia, win.upia_flag + "install", win.to_app(ccx["path"])], timeout=300).stdout
         assert "Installation Successful" in out, out[-1500:]
         with open(plugins_info, encoding="utf-8") as handle:
             entry = [p for p in json.load(handle)["plugins"] if p["pluginId"] == PLUGIN_ID]
         assert entry and entry[0]["status"] == "enabled", entry
-        folder = win.to_local(entry[0]["path"].replace("$localPlugins", appdata + r"\Adobe\UXP\Plugins"))
+        folder = win.to_local(entry[0]["path"].replace("$localPlugins", sep.join([uxp_root, "Plugins"])))
         with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as handle:
             manifest = json.load(handle)
         # The installer keeps an older copy of the same version, so check
@@ -531,15 +623,13 @@ def main():
     shots = {}
 
     def shot(name, title="", min_width=0):
-        out_win = work_win + "\\shots\\" + name + ".png"
-        res = win.powershell(CAPTURE_PS, ["-Out", out_win, "-Title", title, "-MinWidth", str(min_width)])
-        if "saved" in res.stdout:
+        out_win = sep.join([work_win, "shots", name + ".png"])
+        if win.capture(out_win, title, min_width):
             shots[name] = out_win
         return out_win
 
     def launch():
-        subprocess.Popen(["cmd.exe", "/c", "start", "", opts.photoshop], stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL)
+        win.launch(opts.photoshop)
 
     def wait_session(limit=240, want_dev_token=True):
         end = time.time() + limit
@@ -550,19 +640,19 @@ def main():
                 caller.session_id = mine[0]["id"]
                 return mine[0]
             if time.time() - last_gpu > 5 and win.photoshop_running():
-                win.powershell(GPU_NOTICE_PS, timeout=60)
+                win.close_gpu_notice()
                 last_gpu = time.time()
             time.sleep(2)
         raise AssertionError("no session from Photoshop within %d s" % limit)
 
     def close_photoshop(limit=90):
-        win.run(["taskkill.exe", "/IM", "Photoshop.exe"], timeout=60)
+        win.quit_photoshop()
         end = time.time() + limit
         prompt_checked = time.time()
         while time.time() < end and win.photoshop_running():
             time.sleep(1)
             if time.time() - prompt_checked > 8:
-                win.powershell(DONT_SAVE_PS, timeout=60)
+                win.answer_dont_save()
                 prompt_checked = time.time()
         return not win.photoshop_running()
 
@@ -572,7 +662,7 @@ def main():
         def connects():
             session.update(wait_session())
             time.sleep(3)
-            win.powershell(GPU_NOTICE_PS, timeout=60)
+            win.close_gpu_notice()
             assert session["app"] == "photoshop", session
             assert session["capabilities"] == CAPABILITIES, session["capabilities"]
             assert session["plugin_version"] == build.plugin_version(), session
@@ -687,7 +777,17 @@ result = { id: d.id, name: d.name, layers: d.layers.map(l => [l.name, l.kind]) }
         checks.check("run: timeout stops waiting", run_timeout)
 
         def run_language():
-            cmd = caller.command("run", {"language": "python", "code": "print(1)"})
+            # The real API refuses it before it reaches the plugin; the mock
+            # passes it on, so the plugin's own refusal is checked there.
+            body = {"app": "photoshop", "kind": "run", "args": {"language": "python", "code": "print(1)"}}
+            if caller.session_id:
+                body["session_id"] = caller.session_id
+            status, data = caller.http("POST", "/v1/bridge/commands", body)
+            if status == 422:
+                assert data["code"] == "language_not_supported", data
+                return "refused by the API"
+            assert status == 201, (status, data)
+            cmd = caller.wait(data["id"])
             assert cmd["status"] == "failed" and "UXP JavaScript only" in cmd["error"], cmd
 
         checks.check("run: refuses other languages", run_language)
@@ -811,7 +911,7 @@ result = { id: d.id, name: d.name, layers: d.layers.map(l => [l.name, l.kind]) }
             before = len(server.state.uploads) if server else None
             res = ok(caller.command("export", {"format": "psd", "filename": "e2e"}))
             assert res["asset_id"] is None and res["note"].startswith("Photoshop files stay on this computer"), res
-            assert res["path"] == exports_win + r"\e2e.psd", res
+            assert res["path"] == exports_win + sep + "e2e.psd", res
             assert os.path.isfile(os.path.join(work, "exports", "e2e.psd"))
             with open(os.path.join(work, "exports", "e2e.psd"), "rb") as handle:
                 assert handle.read(4) == b"8BPS"
@@ -822,12 +922,12 @@ result = { id: d.id, name: d.name, layers: d.layers.map(l => [l.name, l.kind]) }
 
         checks.check("export: psd stays local and never overwrites", export_psd)
 
-        saved = files_win + r"\e2e-saved.psd"
+        saved = files_win + sep + "e2e-saved.psd"
 
         def save_needs_path():
             cmd = caller.command("save")
             assert cmd["status"] == "failed" and "never been saved" in cmd["error"], cmd
-            cmd = caller.command("save", {"path": files_win + r"\x.png"})
+            cmd = caller.command("save", {"path": files_win + sep + "x.png"})
             assert cmd["status"] == "failed" and "export command" in cmd["error"], cmd
 
         checks.check("save: unsaved needs a path; only .psd/.psb", save_needs_path)
@@ -866,7 +966,7 @@ result = { id: d.id, name: d.name, layers: d.layers.map(l => [l.name, l.kind]) }
                     yield from walk(layer.get("layers") or [])
             names = set(walk(doc["layers"]))
             assert {"NOLGIA Cleanup", "After save", "Patch", "street plate", "Red box", "Background"} <= names, names
-            cmd = caller.command("open", {"path": files_win + r"\missing.psd"})
+            cmd = caller.command("open", {"path": files_win + sep + "missing.psd"})
             assert cmd["status"] == "failed" and "There is no file" in cmd["error"], cmd
 
         checks.check("open: a PSD; a missing file fails clearly", open_file)
@@ -1129,7 +1229,7 @@ result = 'signing in';
                             break
                         time.sleep(3)
                     time.sleep(3)
-                    win.powershell(GPU_NOTICE_PS, timeout=60)
+                    win.close_gpu_notice()
                     res = value(caller.run("const c = globalThis.__nolgia.controller; result = [c.usingDevToken, c.signedIn, c.settings.connected]"))
                     assert res == [False, True, True], res
                     return "session %s" % s["id"][:8]

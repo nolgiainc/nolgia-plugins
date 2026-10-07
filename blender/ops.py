@@ -336,13 +336,21 @@ def _set_engine(render, choice):
     raise CommandError("This Blender does not have the %s render engine." % choice)
 
 
+def _set_format(settings, file_format, media_type="IMAGE"):
+    """Blender 5 lists a file format only under its media type (FFMPEG only
+    under VIDEO), so the media type goes first. Blender 4 has no media type."""
+    if hasattr(settings, "media_type") and settings.media_type != media_type:
+        settings.media_type = media_type
+    settings.file_format = file_format
+
+
 def _save_small(result, scene, settings, path, max_bytes):
     """The render is saved as PNG; when that is over max_bytes, save a JPEG
     instead, lowering the quality until it fits. Returns the path used."""
     if not max_bytes or os.path.getsize(path) <= max_bytes:
         return path
     jpeg = os.path.splitext(path)[0] + ".jpg"
-    settings.file_format = "JPEG"
+    _set_format(settings, "JPEG")
     settings.color_mode = "RGB"
     for quality in PREVIEW_JPEG_QUALITIES:
         settings.quality = quality
@@ -365,7 +373,8 @@ def render_still(scene, camera, frame, width, height, path, engine="current", fa
     saved.keep(scene, "camera")
     saved.keep(render, "resolution_x", "resolution_y", "resolution_percentage", "filepath",
                "use_file_extension", "engine")
-    saved.keep(render.image_settings, "file_format", "color_mode", "color_depth", "compression", "quality")
+    saved.keep(render.image_settings, "file_format", "color_mode", "color_depth", "compression", "quality",
+               "media_type")
     cycles = getattr(scene, "cycles", None)
     saved.keep(cycles, "samples")
     frame_before = scene.frame_current
@@ -379,7 +388,7 @@ def render_still(scene, camera, frame, width, height, path, engine="current", fa
         if fast and render.engine == "CYCLES" and cycles is not None:
             cycles.samples = min(cycles.samples, PREVIEW_MAX_CYCLES_SAMPLES)
         settings = render.image_settings
-        settings.file_format = "PNG"
+        _set_format(settings, "PNG")
         settings.color_mode = "RGBA" if render.film_transparent else "RGB"
         settings.color_depth = "8"
         settings.compression = 15
@@ -465,7 +474,7 @@ def render_movie(scene, folder, stem, frames):
     saved.keep(scene, "frame_start", "frame_end")
     saved.keep(render, "filepath", "use_file_extension", "resolution_x", "resolution_y",
                "resolution_percentage")
-    saved.keep(render.image_settings, "file_format")
+    saved.keep(render.image_settings, "file_format", "media_type")
     saved.keep(ffmpeg, "format", "codec", "constant_rate_factor", "ffmpeg_preset", "audio_codec")
     frame_before = scene.frame_current
     try:
@@ -475,7 +484,7 @@ def render_movie(scene, folder, stem, frames):
         if width % 2 or height % 2:  # H.264 needs even sizes
             render.resolution_x, render.resolution_y = width - width % 2, height - height % 2
             render.resolution_percentage = 100
-        render.image_settings.file_format = "FFMPEG"
+        _set_format(render.image_settings, "FFMPEG", "VIDEO")
         ffmpeg.format = "MPEG4"
         ffmpeg.codec = "H264"
         for attr, value in (("constant_rate_factor", "MEDIUM"), ("ffmpeg_preset", "GOOD")):

@@ -228,6 +228,8 @@ def main():
                 time.sleep(0.5)
             assert session, "no session within 90 s:\n%s\n%s" % (run_output()[-2000:], window_log()[-2000:])
             assert session["app"] == "resolve" and session["document"] == {"name": project_name}, session
+            if prod:
+                caller.session_id = session["id"]
             log = window_log()
             assert "NOLGIA window open" in log, log[-2000:]
             opened = next((l for l in log.splitlines() if "NOLGIA window open" in l), "")
@@ -329,7 +331,8 @@ def main():
         checks.check("Ask before running code: Run code in the request window", approve_in_the_request_window)
 
         def close_from_code():
-            sid = caller.http("GET", "/v1/bridge/sessions")[1]["sessions"][0]["id"]
+            sid = [s for s in caller.http("GET", "/v1/bridge/sessions")[1]["sessions"]
+                   if s["instance_id"] == env["NOLGIA_INSTANCE_ID"]][0]["id"]
             res = expect_ok(caller.command("run", {"code": "import nolgia_resolve\nresult = nolgia_resolve.close_window()"}))
             assert res["value"] is True, res
             end = time.time() + 60
