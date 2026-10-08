@@ -31,6 +31,9 @@ One folder per app. Each folder has its own license.
 
 1. Get `nolgia-blender-<version>.zip` from [nolgia.ai/plugins/blender](https://nolgia.ai/plugins/blender)
    (or the [releases](https://github.com/nolgiainc/nolgia-plugins/releases) here).
+   Safari unpacks a downloaded zip by itself, into a folder named up to the
+   first dot (`nolgia-blender-0`): Control-click that folder, choose Compress
+   and use the zip that makes.
 2. In Blender, open Edit > Preferences > Get Extensions, click the small arrow
    at the top right, choose Install from Disk and pick the zip. (Dragging the
    zip into Blender works too.)
@@ -466,7 +469,9 @@ Apple's Python 3.9 also on that Mac, so a Mac needs no Python installed.
 
 1. Get `nolgia-resolve-<version>.zip` from [nolgia.ai/plugins/davinci-resolve](https://nolgia.ai/plugins/davinci-resolve)
    (or the [releases](https://github.com/nolgiainc/nolgia-plugins/releases) here)
-   and unzip it.
+   and unzip it. Safari unzips it by itself, into a folder named up to the
+   first dot (`nolgia-resolve-0`); `sh ~/Downloads/nolgia-resolve-0*/install.sh`
+   finds that folder or the one a double-click makes.
 2. Quit DaVinci Resolve and run the installer: on Windows double-click
    `install.cmd`; on macOS or Linux run `sh install.sh` in Terminal, in the
    unzipped folder. It copies `NOLGIA.py` and `nolgia_resolve.zip` from the
