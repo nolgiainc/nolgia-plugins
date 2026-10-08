@@ -457,10 +457,10 @@ Which Python runs it: Resolve runs a Scripts menu script in its own
 Resolve 21.1 took the one named in `PYTHON3HOME` (or `PYTHONHOME`) when set,
 else the one in the registry (a per-user install before a machine-wide one;
 `PATH` plays no part), not its own bundled Python 3.14. What it picks on a
-computer with no Python installed has not been checked. On the Mac it was
-tested on, Resolve 21.1.1 took Homebrew's Python 3.14 (with Apple's Command
-Line Tools Python 3.9 also installed); the 3.9 is new enough too if Resolve
-binds to it.
+Windows computer with no Python installed has not been checked. On macOS,
+Resolve 21.1.1 ran it on its own bundled Python 3.14 (3.14.4, from
+`Contents/Resources/ResolvePython`), not on the Homebrew Python 3.14.7 or
+Apple's Python 3.9 also on that Mac, so a Mac needs no Python installed.
 
 ### Install and use
 
@@ -669,7 +669,12 @@ macOS 26.6 (Apple silicon) with DaVinci Resolve Studio 21.1.1 (build 10),
 on October 7, 2026, against the mock API: `resolve/tests/e2e_resolve.py`
 (32 checks) and `resolve/tests/inapp_resolve.py` (11 checks), which installs
 the download with `install.sh` and runs the NOLGIA window inside the open
-Resolve. Not yet run against the real API on macOS, nor on Linux.
+Resolve; and against the real API (31 checks headless, 12 in the app). The
+in-app test also ran on the published `nolgia-resolve-0.1.0.zip` as a person
+gets it: downloaded with the quarantine flag a browser sets, unzipped into
+Downloads, installed with `sh ~/Downloads/nolgia-resolve-0.1.0/install.sh`
+(11 checks against the mock API, 12 against the real one). Not yet run on
+Linux.
 
 ### Development
 
@@ -710,6 +715,7 @@ set to Local. From WSL they use the Windows Resolve (paths through
 ```sh
 python3 resolve/tests/e2e_resolve.py
 python3 resolve/tests/inapp_resolve.py
+python3 resolve/tests/inapp_resolve.py --download ~/Downloads/nolgia-resolve-0.1.0   # a release, unzipped
 ```
 
 Build the download (Python 3, standard library). Releases are tagged
