@@ -99,6 +99,8 @@ def main():
     parser.add_argument("--resolve-python", default=os.environ.get("RESOLVE_PYTHON", e2e.DEFAULTS[key][0]))
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--uninstall", action="store_true", help="remove the installed plugin afterwards")
+    parser.add_argument("--download", default=None,
+                        help="install from this unzipped download (a release, as a person has it) instead of a build")
     parser.add_argument("--api", choices=("mock", "prod"), default="mock")
     parser.add_argument("--api-url", default=e2e.PROD_API, help="for --api prod")
     parser.add_argument("--token-file", default=os.path.expanduser("~/.config/nolgia/tokens.json"),
@@ -126,16 +128,19 @@ def main():
     else:
         utility = os.path.expanduser("~/.local/share/DaVinciResolve/Fusion/Scripts/Utility")
 
+    download = os.path.abspath(opts.download) if opts.download else os.path.join(work, "download")
+
     def install():
-        path = e2e.build.build(os.path.join(work, "dist"))
-        with zipfile.ZipFile(path) as archive:
-            archive.extractall(os.path.join(work, "download"))
+        if not opts.download:
+            path = e2e.build.build(os.path.join(work, "dist"))
+            with zipfile.ZipFile(path) as archive:
+                archive.extractall(download)
         if host.wsl or sys.platform.startswith("win"):
-            cmd = host.native(os.path.join(work, "download", "install.cmd"))
+            cmd = host.native(os.path.join(download, "install.cmd"))
             out = subprocess.run(["cmd.exe", "/c", cmd, "/quiet"], capture_output=True, text=True,
                                  cwd="/mnt/c" if host.wsl else None, timeout=120)
         else:
-            out = subprocess.run(["sh", os.path.join(work, "download", "install.sh")],
+            out = subprocess.run(["sh", os.path.join(download, "install.sh")],
                                  capture_output=True, text=True, timeout=120)
         assert out.returncode == 0, out.stdout + out.stderr
         assert "NOLGIA is installed" in out.stdout, out.stdout
