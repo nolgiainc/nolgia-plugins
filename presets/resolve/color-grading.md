@@ -35,6 +35,11 @@ off or dialled back by the person at any time.
    stock, so their own version stays as it was. (Default: an empty node on
    each clip; the timeline graph when it has one; a new version when a clip
    has no empty node.)
+4. Whether the footage is camera log: flat, grey and washed out on the
+   timeline because the camera recorded Sony S-Log3, ARRI LogC3, Panasonic
+   V-Log or Blackmagic Film. Read the clip metadata first (step 1) and look at
+   the before still; ask only when neither settles it. (Default: what the
+   metadata and the still say; plain Rec.709 when it is a normal picture.)
 
 ## Build
 
@@ -43,7 +48,10 @@ off or dialled back by the person at any time.
    `Resolution` from `GetMediaPoolItem().GetClipProperty()`) and, for each,
    its grade: `item.GetNodeGraph()`, `GetNumNodes()`, and per node
    `GetNodeLabel(i)`, `GetToolsInNode(i)` and `GetLUT(i)`, plus
-   `item.GetCurrentVersion()`. Read the timeline's own graph the same way
+   `item.GetCurrentVersion()`. Read the camera facts too: the clip properties
+   `Gamma Notes`, `Color Space Notes`, `Camera Type`, `Camera Manufacturer`
+   and `Input Color Space` (any may be empty), and the project setting
+   `colorScienceMode` (`project.GetSetting("colorScienceMode")`). Read the timeline's own graph the same way
    (`timeline.GetNodeGraph()`). Keep this list: at the end you compare against
    it. Say in one line what is already graded (a clip with a LUT or an
    output transform means the stock will stack on top; say so).
@@ -54,8 +62,9 @@ off or dialled back by the person at any time.
 3. **Propose stocks.** From the still and the clip facts (daylight or
    tungsten, how much contrast there is, how saturated it is, whether skin is
    in the frame), name two or three stocks with their real names and
-   descriptions, read from `nolgia_list_color_presets`. These are NOLGIA's film
-   stocks:
+   descriptions, read from `nolgia_list_color_presets`. Log footage changes
+   which LUT you install, not which stock you suggest (step 4). These are
+   NOLGIA's film stocks:
 
    | Slug | Name | Description |
    |---|---|---|
@@ -86,9 +95,21 @@ off or dialled back by the person at any time.
    others): offer those only when the person asks for a stylised look. Wait
    for a choice unless they said "go", then take your first suggestion.
 4. **Install the stock.** `nolgia_app_import` with `color_preset: "<slug>"` and
-   nothing else. It installs `<name>.cube` in the `NOLGIA` folder of Resolve's
-   LUT folder, refreshes the LUT list and answers `lut` (the path Resolve lists
-   it under, `NOLGIA/Kodak Portra 400.cube`) and `path` (the file). Keep `lut`.
+   nothing else. For camera log footage pass the stock's log version: the
+   same slug with the camera's suffix, `-slog3` (Sony S-Log3 /
+   S-Gamut3.Cine), `-logc3` (ARRI LogC3), `-vlog` (Panasonic V-Log) or
+   `-bmdfilm5` (Blackmagic Film Gen 5), for example `kodak-portra-400-slog3`.
+   That LUT converts the log picture to Rec.709 with a film curve and then
+   applies the stock, in one node, so the flat clip comes out finished. Use
+   the plain stock instead when the log is already converted before your
+   node: a Color Space Transform or a camera LUT in the clip's grade, an
+   `Input Color Space` set on the clip, or a color managed project
+   (`colorScienceMode` is not `davinciYRGB`); converting twice crushes it.
+   Say which you installed and why. The import installs `<name>.cube` in the
+   `NOLGIA` folder of Resolve's LUT folder, refreshes the LUT list and answers
+   `lut` (the path Resolve lists it under, `NOLGIA/Kodak Portra 400.cube`, or
+   `NOLGIA/Kodak Portra 400 (S-Log3).cube` for the log version) and `path`
+   (the file). Keep `lut`.
 5. **Apply it in a place of its own.** One `nolgia_app_run`, in this order of
    preference, never on a node that already holds tools or a LUT. An empty
    node is one where `GetToolsInNode(i)` answers None or `[]` and `GetLUT(i)`
@@ -133,7 +154,9 @@ off or dialled back by the person at any time.
 
 - Before and after at the timeline's width (the plugin caps `width` at it): skin must still read as
   skin (no green or magenta cast), blacks must not be crushed and highlights
-  must not clip harder than before; a stock stacked on a clip that already had
+  must not clip harder than before; on log footage the after still must look
+  like a finished picture, not still flat (a plain stock on log) and not harsh
+  (a log version on footage already converted); a stock stacked on a clip that already had
   a LUT must be said and shown.
 - Read the grades again, as in step 1, and compare: every node the person had
   still has the same label, tools and LUT; the only differences are the node
