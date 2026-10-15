@@ -69,10 +69,17 @@ Film assistant category. The agent works through the NOLGIA Bridge tools
   or move it afterwards with
   `layer.move(target, constants.ElementPlacement.PLACEBEFORE)` (above) or
   `PLACEAFTER` (below); `PLACEINSIDE` puts it in a group.
-- `doc.createLayerGroup({ name })` always makes the group at the top of the
-  stack. To nest groups, move them in with
+- `doc.createLayerGroup({ name })` makes the group at the top of the stack,
+  but when the top item is itself a group the new group lands inside it
+  (Photoshop 2026, 27.5). To keep groups side by side, check
+  `doc.layers[0].id === group.id` and otherwise
+  `await group.move(doc.layers[0], constants.ElementPlacement.PLACEBEFORE)`.
+  To nest groups on purpose, move them in with
   `group.move(parent, constants.ElementPlacement.PLACEINSIDE)`, which puts
   the moved layer at the top of the parent: move them bottom one first.
+- Deleting a group with `group.delete()` removes only the group: its layers
+  stay in the document where the group was. Delete them first if they should
+  go too.
 - Deleting a layer leaves no layer selected; select one before the next step.
   `nolgia_app_import` places the image right above the selected layer (inside
   its group), or at the top of the stack when none is selected. With a group
