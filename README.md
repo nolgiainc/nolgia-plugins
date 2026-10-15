@@ -193,6 +193,42 @@ the comp or sequence; artboards count from 1.
 | `export` | `mp4` (render queue, H.264), `png` (a frame), `aep` | `mp4` (H.264 Match Source), `png` (a frame), `prproj` | `png` (the artboard, at least 2048 px), `svg`, `pdf`, `ai` |
 | `save` | `path?` | `path?` | `path?` |
 | `open` | `.aep` (asks you first over unsaved changes) | `.prproj` (opens next to the open one) | any file Illustrator opens (in its own window) |
+| `dit` | camera-card DIT through the NOLGIA CLI on this computer (below) | same | same |
+
+**DIT (`dit`).** This runs the NOLGIA CLI's `nolgia dit` on this computer:
+copy camera cards to one to three drives with every copy read back and
+checked, ASC MHL manifests, inventory, rename, undo and the DIT report.
+
+- **Arguments:** `subcommand` is one of `offload`, `verify`, `manifest`,
+  `inventory`, `rename`, `undo` or `report`, with that subcommand's fields:
+  - `offload`: `sources`, `destinations`, `shoot?`, `cards?`, `hash?`,
+    `dry_run?`, `max_parallel?`
+  - `verify`: `dir`, `manifest?`, `only?`, `record?`
+  - `inventory`: `dir`, `clock_offsets?`, `csv?`
+  - `rename`: `dir`, `shoot?`, `cameras?`, `clock_offsets?`, `pattern?`,
+    `map?`, `apply?`
+  - `undo`: `dir`, `map?`
+  - `report`: `dir`, `manifest?`, `verify?`, `only?`, `clock_offsets?`,
+    `out?`
+
+  Paths are full paths.
+- **Long work:** it comes back as `{job_id, running}`. Follow it with
+  `action: "status"` and the `job_id`, or stop it with `action: "cancel"`;
+  a cancelled offload resumes when started again.
+- **Result:** a finished job has `exit_code` (0 everything matched, 68 a
+  mismatch, missing file or conflict, 130 stopped) and the CLI's own JSON
+  as `result`.
+- **Approval:** `offload`, `rename` with `apply` and `undo` first run the
+  CLI's dry run. They then always wait for your Approve in the panel,
+  whoever sent them and whatever "Ask before running code" says. The cards
+  are only read, and nothing at a destination is ever replaced.
+- **What runs:** only the CLI, with arguments built from these fields, and
+  never through a shell.
+- **Install:** the plugin finds `nolgia` on PATH, in the installers'
+  folders and in npm's global package. Without it, the command says how to
+  install it (`npm install -g @nolgia/cli`).
+- **Workflow:** "Offload and verify your cards (DIT)"
+  (`presets/premiere/dit.md`).
 
 Previews are uploaded to your NOLGIA library as a PNG, or a JPEG when the PNG
 would be too big for your agent to see inline (about 3.6 MB): `{asset_id,
@@ -548,6 +584,7 @@ of the timeline (Resolve's own API numbers frames from the start timecode,
 | `export` | `format` (`png`, `mp4`), `frames?` (`"24"` or `"0-119"`), `filename?`, `timeline?` | renders at the timeline's size and uploads it: `png` one frame (default the current one), `mp4` H.264 with the timeline's audio (default the whole timeline): `{asset_id, format, filename, frames, width, height, timeline}`. It renders into a temporary folder, never over your files, and puts the render queue and the Deliver page's settings back. |
 | `save` | none | saves the open project: `{project, saved}` |
 | `open` | `project`, `folder?` | opens another project: `{project, folder}`. With the NOLGIA window open it always asks you first (Resolve cannot tell whether there are unsaved changes). |
+| `dit` | `subcommand` (`offload`, `verify`, `manifest`, `inventory`, `rename`, `undo`, `report`) and its fields, or `action: "status"`/`"cancel"` with `job_id` | camera-card DIT through the NOLGIA CLI, the same contract as the Adobe plugin's (see above). Writes (`offload`, `rename` with `apply`, `undo`) are planned with the CLI's dry run and wait for your Approve in the NOLGIA window; with no window open they do not run. It hands back a job within about 2 s so Resolve's window stays responsive; follow it with `status`. Workflow: `presets/resolve/dit.md`. |
 
 **LUTs.** NOLGIA's film-look color presets come from the API it uses
 (`GET /color-presets`, public). `import_asset` installs a LUT into a `NOLGIA`
