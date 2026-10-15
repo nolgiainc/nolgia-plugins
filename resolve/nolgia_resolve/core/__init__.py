@@ -8,7 +8,7 @@ resolve/tests/test_core_copy.py, which lists the few places they may differ
 app's name in messages). Nothing in this package talks to Resolve.
 """
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.1.1"
 APP = "resolve"
 DEFAULT_API_URL = "https://api.nolgia.ai/v1"
 DEVICE_CLIENT_ID = "nolgia-resolve"
