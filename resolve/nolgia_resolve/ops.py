@@ -18,7 +18,7 @@ import shutil
 import tempfile
 import time
 
-from . import paths, still, timecode
+from . import dit, paths, still, timecode
 from .core import util
 from .core.api import ApiError, NetworkError
 from .core.commands import CommandError
@@ -697,6 +697,44 @@ class Ops:
         if restore.get("page") and call(self.resolve, "GetCurrentPage") != restore["page"]:
             call(self.resolve, "OpenPage", restore["page"])
 
+    # ------------------------------------------------------------------ dit
+
+    def dit_approval(self, command, prepared):
+        """Writes to media (offload, rename --apply, undo) always wait for the
+        person's Approve, whoever sent them, with the CLI's own plan."""
+        if not dit.writes_media(command.args) or not prepared or "lines" not in prepared:
+            return None
+        return ApprovalRequest(
+            "%s wants to %s on this computer" % (command.caller_label, prepared["title"]),
+            prepared["lines"],
+            headless_error="Copying or renaming camera files needs the person's OK in the NOLGIA window, and "
+            "DaVinci Resolve has no NOLGIA window open, so it did not run.",
+            approve_label=prepared["approve"],
+        )
+
+    def do_dit(self, args, prepared, command):
+        jobs = getattr(self, "dit_jobs", None)
+        if jobs is None:
+            jobs = self.dit_jobs = dit.Jobs()
+        try:
+            if args["action"] == "status":
+                return jobs.status(args["job_id"])
+            if args["action"] == "cancel":
+                return jobs.cancel(args["job_id"])
+        except dit.DitError as err:
+            raise CommandError(str(err))
+        cli = (prepared or {}).get("cli") or dit.locate_cli()
+        if not cli:
+            raise CommandError(dit.INSTALL_HINT)
+        if dit.writes_media(args):
+            if prepared and prepared.get("refused"):
+                raise CommandError(prepared["refused"], prepared.get("result"))
+            if prepared and "nothing" in prepared:
+                return {"running": False, "exit_code": 0, "meaning": "nothing to rename", "result": prepared["nothing"]}
+        job = jobs.start(cli, dit.argv(args))
+        # This runs on Resolve's main thread: hand back a job rather than hold the UI.
+        return jobs.wait(job, 2.0)
+
     # ------------------------------------------------------------ save, open
 
     def do_save(self, args, prepared, command):
@@ -1010,6 +1048,20 @@ class Ops:
 
 
 MAX_PROJECT_ASSETS = 200
+
+
+def prepare_dit(command):
+    """Worker thread: find the CLI, and for a write, run its dry run so the
+    approval shows the real plan."""
+    args = command.args
+    if args.get("action") != "start":
+        return None
+    cli = dit.locate_cli()
+    if not cli:
+        return {"cli": None}
+    plan = dit.plan_for(cli, args) if dit.writes_media(args) else {}
+    plan["cli"] = cli
+    return plan
 
 
 def prepare_import(command, api, snapshot, log=lambda m: None):

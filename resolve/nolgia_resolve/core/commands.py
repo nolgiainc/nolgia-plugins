@@ -14,7 +14,7 @@ from .util import parse_time, cut_text
 
 # Every kind this plugin implements, in the order the spec lists them. The
 # plugin advertises exactly these in `capabilities`.
-CAPABILITIES = ("info", "run", "preview", "import_asset", "export", "save", "open")
+CAPABILITIES = ("info", "run", "preview", "import_asset", "export", "save", "open", "dit")
 
 EXPORT_FORMATS = ("png", "mp4")
 LUT_TARGETS = ("current", "selected", "current_track", "all")
@@ -258,6 +258,12 @@ def validate(kind, args):
         if not out["project"]:
             raise CommandError("`project` is required: the name of the DaVinci Resolve project to open.")
         out["folder"] = _str(args, "folder")
+    elif kind == "dit":
+        from ..dit import DitError, validate_args
+        try:
+            return validate_args(args)
+        except DitError as err:
+            raise CommandError(str(err))
     return out
 
 

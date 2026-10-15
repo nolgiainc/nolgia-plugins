@@ -404,6 +404,8 @@ class Controller:
             return self.ops.run_approval(command, bool(self.setting("ask_before_run")))
         if command.kind == "open":
             return self.ops.open_approval(command)
+        if command.kind == "dit":
+            return self.ops.dit_approval(command, ticket.prepared)
         return None
 
     def _run_ticket(self, ticket):
@@ -425,6 +427,8 @@ class Controller:
         """Worker thread: network work a command needs before Resolve runs it."""
         if command.kind == "import_asset":
             return ops_module.prepare_import(command, api, self.snapshot, self.log)
+        if command.kind == "dit":
+            return ops_module.prepare_dit(command)
         return None
 
     def _on_approvals_changed(self):

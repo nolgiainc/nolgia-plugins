@@ -34,6 +34,8 @@ PER_APP_COMMANDS = {
     "EXPORT_FORMATS",
     # DaVinci Resolve
     "LUT_TARGETS", "_bool", "_timecode", "_slug", "_ids",
+    # each app's own command kinds (DaVinci Resolve also has `dit`)
+    "CAPABILITIES",
 }
 
 
