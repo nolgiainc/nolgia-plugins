@@ -189,7 +189,7 @@ the comp or sequence; artboards count from 1.
 | `info` | project (file, unsaved changes, items by kind, bit depth), active comp (size, frame rate, frames, current frame, work area, layers with type, effects and selection), all comps, selected items, render queue | project (file), bins with counts, sequences (size, frame rate, length, tracks), active sequence (playhead, in and out, tracks, selected clips), selected items | open documents, the active one's colour mode, size, artboards, layers and sublayers, selection, counts of paths, groups, images and text |
 | `run` | ExtendScript: `{value, stdout, stderr}` (see below) | same | same |
 | `preview` | `comp` (or `camera`) name, `frame`, `width`: a still of a comp or of a footage item | `sequence` (or `camera`), `frame`, `width`: a frame of the sequence | `artboard` (name or number, or `camera`), `width`: the artboard |
-| `import_asset` | footage into the `NOLGIA imports` folder; `as: "layer"` also adds it to the active comp | media into the `NOLGIA imports` bin | images embedded (or `as: "link"`) and SVG, PDF or AI as groups, on a `NOLGIA imports` layer; with nothing open, the image opens as a document |
+| `import_asset` | footage into the `NOLGIA imports` folder; `as: "layer"` also adds it to the active comp; or `color_preset`, a NOLGIA film stock installed as a LUT (below) | media into the `NOLGIA imports` bin; or `color_preset`, a NOLGIA film stock installed as a LUT (below) | images embedded (or `as: "link"`) and SVG, PDF or AI as groups, on a `NOLGIA imports` layer; with nothing open, the image opens as a document |
 | `export` | `mp4` (render queue, H.264), `png` (a frame), `aep` | `mp4` (H.264 Match Source), `png` (a frame), `prproj` | `png` (the artboard, at least 2048 px), `svg`, `pdf`, `ai` |
 | `save` | `path?` | `path?` | `path?` |
 | `open` | `.aep` (asks you first over unsaved changes) | `.prproj` (opens next to the open one) | any file Illustrator opens (in its own window) |
@@ -205,6 +205,23 @@ yet, so those exports stay on your computer too, next to the document:
 `{asset_id: null, path, note}`. Imported files that the app needs on disk go
 into `nolgia_assets` next to the project, or Documents/NOLGIA imports while it
 is unsaved; WebP images are converted to PNG, which the apps read.
+
+**LUTs in Premiere Pro and After Effects.** `import_asset` with
+`color_preset` (a slug from `GET /color-presets`, which is public) installs
+that NOLGIA film stock as a `.cube` LUT in the per-user Adobe LUT folder that
+Lumetri Color reads, so no administrator rights are needed:
+`%APPDATA%\Adobe\Common\LUTs` on Windows,
+`~/Library/Application Support/Adobe/Common/LUTs` on macOS. A look goes in
+`Creative` and is listed under Lumetri Color > Creative > Look. A camera log
+variant (the slug plus `-slog3`, `-logc3`, `-vlog` or `-bmdfilm5`, for example
+`kodak-portra-400-slog3`) converts that log footage to Rec.709 before the look,
+so it goes in `Technical` and is listed under Basic Correction > Input LUT. The
+file is named after the preset (`NOLGIA Kodak Portra 400 (S-Log3).cube`) and
+replaces its own older copy: `{imported, kind: "lut", color_preset, lut, path,
+menu, relaunch_needed, note}`. The apps read these folders when they start, so
+the LUT shows up after you save, quit and reopen. Their scripting cannot set a
+LUT on a clip, so `apply_to` installs the LUT and says it was not applied
+(`applied_to: []`, `apply_note`): pick it in the menu above.
 
 **`run`** evaluates ExtendScript in the app. The code sees `print()`, `log()`,
 `console.log/info/warn/error` and `$.writeln` (captured as stdout; warn and error
@@ -229,6 +246,7 @@ app finishes it on its own.
 | `NOLGIA_INSTANCE_ID` | fixed session id for this app |
 | `NOLGIA_EXPORT_DIR` | where `aep`, `prproj` and `ai` copies of unsaved projects go |
 | `NOLGIA_PREVIEW_MAX_BYTES` | the size above which previews become JPEG |
+| `NOLGIA_LUT_DIR` | the LUT folder `color_preset` installs into (it holds `Creative` and `Technical`); default the per-user Adobe one |
 
 Apps started from the Creative Cloud app or a launcher often do not get your
 environment, so the same keys can go in a file instead:
