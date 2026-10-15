@@ -146,11 +146,11 @@ switches. Closing the panel does not disconnect.
    Adobe's own installer. On Windows:
 
    ```bat
-   "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install nolgia-adobe-0.1.2.zxp
+   "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install nolgia-adobe-0.1.3.zxp
    ```
 
    On macOS the same tool is
-   `/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent --install nolgia-adobe-0.1.2.zxp`.
+   `/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent --install nolgia-adobe-0.1.3.zxp`.
    The installer skips a version that is already installed: to reinstall the
    same version, remove it first (`/remove NOLGIA`). The package is signed, so
    no debug setting is needed.
@@ -317,7 +317,7 @@ keeps it in `adobe/dist` (ignored by git):
 
 ```sh
 node adobe/tools/build.js --zxpsigncmd /path/to/ZXPSignCmd.exe
-# adobe/dist/nolgia-adobe-0.1.2.zxp
+# adobe/dist/nolgia-adobe-0.1.3.zxp
 ```
 
 `--debug` adds a `.debug` file that opens Chrome DevTools on ports 8092 to 8094
@@ -782,5 +782,5 @@ Build the download (Python 3, standard library). Releases are tagged
 `resolve-v<version>` with the zip attached as `nolgia-resolve-<version>.zip`.
 
 ```sh
-python3 resolve/build.py      # resolve/dist/nolgia-resolve-0.1.0.zip
+python3 resolve/build.py      # resolve/dist/nolgia-resolve-0.1.1.zip
 ```
