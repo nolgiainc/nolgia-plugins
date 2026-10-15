@@ -45,7 +45,12 @@ grade, say so and use "Grade a timeline in DaVinci Resolve" alone.
    clips in scope with their frames, `Gamma Notes`, `Color Space Notes`,
    `Camera Type` and `Input Color Space`, the project's `colorScienceMode`,
    and each clip's node graph (`GetNumNodes`, `GetNodeLabel`,
-   `GetToolsInNode`, `GetLUT`). Keep the list. Name the camera log in one line
+   `GetToolsInNode`, `GetLUT`). Keep the list. Resolve often leaves `Camera
+   Type` and `Gamma Notes` empty (renamed Sony XAVC files, for example). Then
+   read the camera's own sidecar next to the clip's `File Path`: a Sony
+   `NonRealTimeMeta` XML with the clip's name and `.XML` or `M01.XML`, whose
+   `Device modelName`, `CaptureGammaEquation` and `CaptureColorPrimaries` name
+   the camera and the log (`s-log3-cine`, `s-gamut3-cine`). Name the camera log in one line
    ("23 clips, Sony ILME-FX3A, S-Log3 / S-Gamut3.Cine") and stop with an
    explanation if the footage isn't one of the four logs above or the project
    is color managed.
@@ -58,7 +63,8 @@ grade, say so and use "Grade a timeline in DaVinci Resolve" alone.
    `project.ExportCurrentFrameAsStill(path)` to a `.bmp` in the system temp
    folder, read it with the reader below, then delete the file. From a grid
    of about 160 x 90 samples, compute the two numbers below in scene light and
-   return them. Never keep frames.
+   return them. Never keep frames. Compute each percentile once per shot, not
+   inside a loop over the pixels: the whole timeline then reads in seconds.
    - **White:** the median red, green and blue of the least saturated 30
      percent of the pixels between the 40th and 97th brightness percentile
      (walls, shirts, paper, sky: what should be white or grey).
@@ -71,8 +77,11 @@ grade, say so and use "Grade a timeline in DaVinci Resolve" alone.
      question 3 (0 for the hero);
    - the CDL Offset per channel is `(color + exposure) x stop`, where `stop` is
      one stop in the camera's log code: S-Log3 0.0770, ARRI LogC3 (EI 800)
-     0.0744, Panasonic V-Log 0.0727, Blackmagic Film Gen 5 0.0603. Slope 1 1 1,
-     Power 1 1 1, Saturation 1.
+     0.0744, Panasonic V-Log 0.0727, Blackmagic Film Gen 5 0.0603, divided by
+     1.0704: an Offset of 1.0 in `SetCDL` moves a still exported with
+     `ExportCurrentFrameAsStill` by 1095/1023 (legal to full range), so values
+     measured on those stills are scaled back. Slope 1 1 1, Power 1 1 1,
+     Saturation 1.
    Show the table (clip, color stops R G B, exposure stops) before anything is
    set, and wait for a yes unless they said "go".
 5. **Set it.** One `nolgia_app_run`: for each clip,
@@ -83,8 +92,10 @@ grade, say so and use "Grade a timeline in DaVinci Resolve" alone.
 6. **The stock on top.** Install the stock's log version with
    `nolgia_app_import` `color_preset: "<slug>-<log>"` and `SetLUT` it on the
    same NOLGIA node of every clip, exactly as "Grade a timeline" steps 4 and 5.
-   In a node, Resolve applies the LUT after the node's own corrections, so the
-   balance happens in log and the stock converts it.
+   In a node, Resolve applies the LUT after the node's own corrections (CDL
+   included), so the balance happens in log and the stock converts it. A color
+   group's post-clip graph also has a node of its own, if the person groups
+   the shots and wants the stock there instead, once for the group.
 7. **Before and after.** `nolgia_app_preview` of the hero and of two matched
    clips at the same frames as step 3, with the stock on, and the before
    stills from before step 5. Say what moved in two lines per clip.
