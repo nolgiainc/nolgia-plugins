@@ -134,6 +134,24 @@
           toggle("Ask before running code", "Show each script and wait for your OK.", s.ask_before_run, "ask_before_run"),
         ])
       );
+      if (s.transcripts) {
+        const t = s.transcripts;
+        const line = t.connected
+          ? t.can && t.can.make
+            ? "Transcripts: Premiere's Speech to Text, made and read here."
+            : "Transcripts: reads the transcripts Premiere has."
+          : "Transcripts: NOLGIA Transcripts is not running in Premiere.";
+        main.appendChild(el("div", { class: "account", text: line }));
+        const busy = t.install && t.install.status === "running";
+        if (!t.connected) {
+          main.appendChild(
+            el("div", { style: "margin-bottom:8px" }, [
+              button(busy ? "Installing..." : "Install transcripts", () => send("install_transcripts"), "small"),
+            ])
+          );
+        }
+        if (t.install && t.install.message) main.appendChild(el("div", { class: "message", text: t.install.message }));
+      }
     }
 
     const head = el("div", { class: "activity-head" }, [el("span", { class: "heading", text: "Activity" })]);
