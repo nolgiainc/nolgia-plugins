@@ -348,6 +348,14 @@ works), so the test quits it through the plugin with ExtendScript's
 test's macOS support changed how it drives the apps on Windows too; it has
 not been run on Windows since.
 
+DIT (the `dit` command kind running the NOLGIA CLI 0.3.1), on October 15,
+2026, against the real API through `POST /bridge/commands`: in Premiere Pro
+2026 on Windows 11 with 0.1.3, `inventory` and the approval card for an
+offload (denied); in Premiere Pro 26.5.2 on macOS 26.6.2 (Apple silicon)
+with a 0.1.4 test build carrying the same `core/dit.js`, a dry-run plan, an
+offload approved in the panel, `verify` of the shoot folder, `inventory`, a
+`rename` dry run and `report --verify`.
+
 ## NOLGIA for Photoshop
 
 A UXP plugin for Photoshop 2024 (25.0) and newer. Tested on Windows with
@@ -735,6 +743,15 @@ gets it: downloaded with the quarantine flag a browser sets, unzipped into
 Downloads, installed with `sh ~/Downloads/nolgia-resolve-0.1.0/install.sh`
 (11 checks against the mock API, 12 against the real one). Not yet run on
 Linux.
+
+DIT in 0.1.1 (the `dit` command kind running the NOLGIA CLI 0.3.1), on
+October 15, 2026, against the real API through `POST /bridge/commands`:
+on Windows 11 with DaVinci Resolve Studio 21.1.1, a dry-run plan, an
+offload approved in the NOLGIA request window, `verify` of the shoot folder,
+`inventory` and an import of the copies into a bin; on macOS 26.6.2 (Apple
+silicon) with Resolve 21.1.1 and the published `nolgia-resolve-0.1.1.zip`
+installed with `install.sh`, the same steps plus a `rename` dry run and
+`report --verify`.
 
 ### Development
 
