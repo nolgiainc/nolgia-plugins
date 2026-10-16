@@ -146,11 +146,11 @@ switches. Closing the panel does not disconnect.
    Adobe's own installer. On Windows:
 
    ```bat
-   "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install nolgia-adobe-0.1.3.zxp
+   "C:\Program Files\Common Files\Adobe\Adobe Desktop Common\RemoteComponents\UPI\UnifiedPluginInstallerAgent\UnifiedPluginInstallerAgent.exe" /install nolgia-adobe-0.1.4.zxp
    ```
 
    On macOS the same tool is
-   `/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent --install nolgia-adobe-0.1.3.zxp`.
+   `/Library/Application Support/Adobe/Adobe Desktop Common/RemoteComponents/UPI/UnifiedPluginInstallerAgent/UnifiedPluginInstallerAgent.app/Contents/MacOS/UnifiedPluginInstallerAgent --install nolgia-adobe-0.1.4.zxp`.
    The installer skips a version that is already installed: to reinstall the
    same version, remove it first (`/remove NOLGIA`). The package is signed, so
    no debug setting is needed.
@@ -366,7 +366,7 @@ keeps it in `adobe/dist` (ignored by git):
 
 ```sh
 node adobe/tools/build.js --zxpsigncmd /path/to/ZXPSignCmd.exe
-# adobe/dist/nolgia-adobe-0.1.3.zxp
+# adobe/dist/nolgia-adobe-0.1.4.zxp
 node adobe/tools/build-transcripts.js
 # adobe/dist/nolgia-premiere-transcripts-<version>.ccx (NOLGIA Transcripts, a plain zip;
 # build.js also puts it inside the .zxp, for the panel's Install transcripts)
@@ -407,6 +407,19 @@ offload (denied); in Premiere Pro 26.5.2 on macOS 26.6.2 (Apple silicon)
 with a 0.1.4 test build carrying the same `core/dit.js`, a dry-run plan, an
 offload approved in the panel, `verify` of the shoot folder, `inventory`, a
 `rename` dry run and `report --verify`.
+
+Transcripts (the `transcribe` command kind with NOLGIA Transcripts), on
+October 16, 2026, against the real API through `POST /bridge/commands`, on
+our own clips: in Premiere Pro 26.2.0 on Windows 11, Premiere's own
+transcripts (made with transcribe on import) read through the helper with
+word times and speaker labels, the `needs_credits` quote, and NOLGIA's
+transcription of two more clips (2 credits); a dialogue-first cut laid on
+those sentences. In Premiere Pro 26.5.2 on macOS 26.6.2 (Apple silicon)
+with a 0.1.4 test build: Install transcripts in the panel installed the
+helper, which connected by itself; Premiere made a transcript on request
+(`transcribeClipProjectItem`); NOLGIA's transcription through the MP3
+export (1 credit). macOS resolves localhost to ::1 first, which is why the
+local link listens on both loopbacks.
 
 ## NOLGIA for Photoshop
 
