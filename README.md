@@ -155,6 +155,10 @@ switches. Closing the panel does not disconnect.
    same version, remove it first (`/remove NOLGIA`). The package is signed, so
    no debug setting is needed.
 3. Start the app and open Window > Extensions > NOLGIA.
+   For transcripts in Premiere Pro (`transcribe`, below), also install
+   `nolgia-premiere-transcripts-<version>.ccx` the same way (or double-click
+   it): NOLGIA Transcripts, a small UXP plugin that starts with Premiere Pro
+   25.6 or later.
 4. Click Sign in. Your browser opens a NOLGIA page; check that the code
    matches the one in the panel and approve it. Each app signs in on its own.
 5. Keep Connected on and ask your agent to work in the app. Each command shows
@@ -181,8 +185,9 @@ any script. Turn on Ask before running code if you want to see it first.
 
 ### What your agent can do
 
-Every app takes the seven command kinds. Frames count from 0 at the start of
-the comp or sequence; artboards count from 1.
+Every app takes the command kinds in the table; Premiere Pro also takes
+`transcribe` (below). Frames count from 0 at the start of the comp or
+sequence; artboards count from 1.
 
 | Command | After Effects | Premiere Pro | Illustrator |
 |---|---|---|---|
@@ -229,6 +234,42 @@ checked, ASC MHL manifests, inventory, rename, undo and the DIT report.
   install it (`npm install -g @nolgia/cli`).
 - **Workflow:** "Offload and verify your cards (DIT)"
   (`presets/premiere/dit.md`).
+
+**Transcripts in Premiere Pro (`transcribe`).** Timed transcripts of the
+clips in the project, so an agent can cut on what people say.
+
+- **Arguments:** `clips` is `"selected"` (default: the clips selected in the
+  Project panel, else on the timeline), `"sequence"` (every clip used in
+  `sequence`, default the active one) or a list of clip names or media paths;
+  `engine` is `"auto"` (default), `"premiere"` or `"nolgia"`; `allow_credits`
+  (default false); `language` (two letters, default `en`); `words` (also
+  return each word's time).
+- **Premiere's own Speech to Text** (free, on this computer): ExtendScript has
+  no transcript API, so NOLGIA Transcripts (`adobe/premiere-uxp`, UXP) reads
+  them and hands them to the extension over a local link on 127.0.0.1 (ports
+  47731 to 47733; it only answers requests that carry the helper's header and
+  a 127.0.0.1 Host). Premiere Pro 25.6 and later read the transcript Premiere
+  already has (Text panel > Transcript > Transcribe, or Preferences >
+  Transcription > Automatically transcribe video clips on import); 26.5 and
+  later also make it when there is none.
+- **NOLGIA's transcription** (`engine: "auto"` for the clips Premiere has no
+  transcript of, or `"nolgia"`): Premiere exports the clip's audio as an MP3
+  (a temporary sequence in a temporary bin, both removed), it is uploaded to
+  your NOLGIA library and transcribed (`POST /assets/{id}/transcription`,
+  1 credit per started minute of each clip, at most 60 minutes). Only with
+  `allow_credits: true`; without it the result has `needs_credits` (clips,
+  minutes, credits) for the agent to ask about. Its segments are pause-cut
+  chunks of up to about 24 seconds, without word times.
+- **Result:** `transcripts` (per clip: `engine`, `timing` (`words`,
+  `segments` or `chunks`), `segments` with `start`, `end`, `text` and
+  Premiere's `speaker` label, `sentences` when word times are known, `file`),
+  `missing` (with what to do), `needs_credits`, `credits_charged`. Each
+  transcript is saved as JSON in `nolgia_transcripts` next to the project
+  (Documents/NOLGIA exports/transcripts while it is unsaved), Premiere's own
+  JSON included. Long work comes back as `{job_id, running}`; follow it with
+  `action: "status"` or stop it with `action: "cancel"`.
+- **Workflow:** "Cut a behind-the-scenes edit in Premiere Pro"
+  (`presets/premiere/bts-cut.md`) cuts on whole sentences with it.
 
 Previews are uploaded to your NOLGIA library as a PNG, or a JPEG when the PNG
 would be too big for your agent to see inline (about 3.6 MB): `{asset_id,
@@ -283,6 +324,8 @@ app finishes it on its own.
 | `NOLGIA_EXPORT_DIR` | where `aep`, `prproj` and `ai` copies of unsaved projects go |
 | `NOLGIA_PREVIEW_MAX_BYTES` | the size above which previews become JPEG |
 | `NOLGIA_LUT_DIR` | the LUT folder `color_preset` installs into (it holds `Creative` and `Technical`); default the per-user Adobe one |
+| `NOLGIA_TRANSCRIPTS=0` | Premiere Pro: do not open the local link NOLGIA Transcripts connects to |
+| `NOLGIA_TRANSCRIPTS_PORTS` | Premiere Pro: other ports for that link (comma separated; NOLGIA Transcripts tries 47731 to 47733) |
 
 Apps started from the Creative Cloud app or a launcher often do not get your
 environment, so the same keys can go in a file instead:
@@ -318,6 +361,8 @@ keeps it in `adobe/dist` (ignored by git):
 ```sh
 node adobe/tools/build.js --zxpsigncmd /path/to/ZXPSignCmd.exe
 # adobe/dist/nolgia-adobe-0.1.3.zxp
+node adobe/tools/build-transcripts.js
+# adobe/dist/nolgia-premiere-transcripts-<version>.ccx (NOLGIA Transcripts, a plain zip)
 ```
 
 `--debug` adds a `.debug` file that opens Chrome DevTools on ports 8092 to 8094
