@@ -170,8 +170,10 @@ def bmdfilm5_to_linear(c):
 
 Save the project. Tell the person the hero shot, the table of offsets per
 clip, where they sit (node or version), how to take one back (on the Color
-page, that node's Offset wheel back to zero, or the clip's own version in its
-Versions menu), the stock and its LUT path, and the safety copy's path.
+page, select that node and reset the Primaries palette: Resolve shows the CDL
+there as small Lift and Gain values, not on the Offset wheel; or
+`item.SetCDL` with Offset `0 0 0`; or the clip's own version in its Versions
+menu), the stock and its LUT path, and the safety copy's path.
 
 What this workflow never does: it never changes the person's own nodes, LUTs
 or versions, never matches beyond the range they chose, and never renders or
