@@ -155,10 +155,11 @@ switches. Closing the panel does not disconnect.
    same version, remove it first (`/remove NOLGIA`). The package is signed, so
    no debug setting is needed.
 3. Start the app and open Window > Extensions > NOLGIA.
-   For transcripts in Premiere Pro (`transcribe`, below), also install
-   `nolgia-premiere-transcripts-<version>.ccx` the same way (or double-click
-   it): NOLGIA Transcripts, a small UXP plugin that starts with Premiere Pro
-   25.6 or later.
+   For transcripts in Premiere Pro (`transcribe`, below), click Install
+   transcripts in the panel once: Adobe's installer adds NOLGIA Transcripts,
+   a small UXP plugin that comes inside the extension (Premiere Pro 25.6 or
+   later). If the panel does not show it running within a minute, open
+   Window > UXP Plugins > NOLGIA Transcripts once.
 4. Click Sign in. Your browser opens a NOLGIA page; check that the code
    matches the one in the panel and approve it. Each app signs in on its own.
 5. Keep Connected on and ask your agent to work in the app. Each command shows
@@ -328,7 +329,8 @@ app finishes it on its own.
 | `NOLGIA_PREVIEW_MAX_BYTES` | the size above which previews become JPEG |
 | `NOLGIA_LUT_DIR` | the LUT folder `color_preset` installs into (it holds `Creative` and `Technical`); default the per-user Adobe one |
 | `NOLGIA_TRANSCRIPTS=0` | Premiere Pro: do not open the local link NOLGIA Transcripts connects to |
-| `NOLGIA_TRANSCRIPTS_PORTS` | Premiere Pro: other ports for that link (comma separated; NOLGIA Transcripts tries 47731 to 47733) |
+| `NOLGIA_TRANSCRIPTS_PORTS` | Premiere Pro: other ports for that link (NOLGIA Transcripts may reach 47731 to 47733) |
+| `NOLGIA_UPIA`, `NOLGIA_TRANSCRIPTS_PACKAGE` | tests: the installer and the package Install transcripts uses |
 
 Apps started from the Creative Cloud app or a launcher often do not get your
 environment, so the same keys can go in a file instead:
@@ -365,7 +367,8 @@ keeps it in `adobe/dist` (ignored by git):
 node adobe/tools/build.js --zxpsigncmd /path/to/ZXPSignCmd.exe
 # adobe/dist/nolgia-adobe-0.1.3.zxp
 node adobe/tools/build-transcripts.js
-# adobe/dist/nolgia-premiere-transcripts-<version>.ccx (NOLGIA Transcripts, a plain zip)
+# adobe/dist/nolgia-premiere-transcripts-<version>.ccx (NOLGIA Transcripts, a plain zip;
+# build.js also puts it inside the .zxp, for the panel's Install transcripts)
 ```
 
 `--debug` adds a `.debug` file that opens Chrome DevTools on ports 8092 to 8094
