@@ -269,6 +269,7 @@ clips in the project, so an agent can cut on what people say.
   Premiere's `speaker` label, `sentences` when word times are known, `file`),
   `missing` (with what to do), `needs_credits`, `credits_charged`. Each
   transcript is saved as JSON in `nolgia_transcripts` next to the project
+  (`<clip>.json`; NOLGIA's as `<clip>.nolgia.json`)
   (Documents/NOLGIA exports/transcripts while it is unsaved), Premiere's own
   JSON included. Long work comes back as `{job_id, running}`; follow it with
   `action: "status"` or stop it with `action: "cancel"`.
