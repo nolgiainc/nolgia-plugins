@@ -246,9 +246,12 @@ clips in the project, so an agent can cut on what people say.
   return each word's time).
 - **Premiere's own Speech to Text** (free, on this computer): ExtendScript has
   no transcript API, so NOLGIA Transcripts (`adobe/premiere-uxp`, UXP) reads
-  them and hands them to the extension over a local link on 127.0.0.1 (ports
-  47731 to 47733; it only answers requests that carry the helper's header and
-  a 127.0.0.1 Host). Premiere Pro 25.6 and later read the transcript Premiere
+  them and hands them to the extension over a local link: it listens on
+  127.0.0.1 only (ports 47731 to 47733), only while NOLGIA is connected in
+  Premiere, and answers only requests that carry that session's secret (made
+  at each start and written with the port to `transcripts-link.json` in the
+  plugin's settings folder, removed when the link closes) and a 127.0.0.1
+  Host. Premiere Pro 25.6 and later read the transcript Premiere
   already has (Text panel > Transcript > Transcribe, or Preferences >
   Transcription > Automatically transcribe video clips on import); 26.5 and
   later also make it when there is none.
